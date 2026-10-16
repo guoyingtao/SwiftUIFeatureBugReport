@@ -132,9 +132,9 @@ public struct MyDataCounts: Sendable, Equatable {
             }
             else if !privateIDs.isEmpty && creatorID == container.currentUserRecordID {
 
-                try await PrivateReportService.saveDeletionRequest(recordName: RecordID.privateDeletionAll(user: creatorID),
-                                                                   scope: .all,
+                try await PrivateReportService.saveDeletionRequest(scope: .all,
                                                                    reportNames: [],
+                                                                   requesterID: creatorID,
                                                                    in: database)
                 deletionRequested = true
             }

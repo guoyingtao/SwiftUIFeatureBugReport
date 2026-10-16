@@ -88,12 +88,6 @@ enum RecordID {
 
     static func metadata(request: String) -> String { validated("meta_\(request)") }
 
-    /// One pending request per report, so asking twice collides instead of queueing duplicates.
-    static func privateDeletion(report: String) -> String { validated("privdel_\(report)") }
-
-    /// One pending "delete all my private reports" request per user.
-    static func privateDeletionAll(user: String) -> String { validated("privdel_all_\(user)") }
-
     /// Makes a broadcast repeatable. Announcing the same thing twice - a double-tapped "Notify
     /// everyone following" - collides server-side instead of sending everyone a second push.
     ///

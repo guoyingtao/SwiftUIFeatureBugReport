@@ -42,12 +42,14 @@ public struct PrivateReport: Identifiable, Sendable, Hashable {
         self.init(record: record,
                   trustsDeveloperFields: PrivateReportTrust.isDeveloperModified(record,
                                                                                 developerUserRecordIDs: developerUserRecordIDs,
-                                                                                currentUserRecordID: currentUserRecordID))
+                                                                                currentUserRecordID: currentUserRecordID),
+                  currentUserRecordID: currentUserRecordID)
     }
 
     /// - Parameter trustsDeveloperFields: When `false`, `replies` reads as empty and `status` as
     ///   `.open`, whatever the record holds.
-    init?(record: CKRecord, trustsDeveloperFields: Bool) {
+    ///   `creatorID` always comes from CloudKit's `creatorUserRecordID`, never the client-written field.
+    init?(record: CKRecord, trustsDeveloperFields: Bool, currentUserRecordID: String? = nil) {
 
         guard record.recordType == RecordType.privateReport else { return nil }
 
@@ -58,7 +60,10 @@ public struct PrivateReport: Identifiable, Sendable, Hashable {
         self.status = trustsDeveloperFields
             ? RequestStatus(rawValue: record[FieldKey.status] as? String ?? "") ?? .open
             : PrivateReportTrust.initialStatus
-        self.creatorID = record[FieldKey.creatorID] as? String ?? ""
+        // The sender is CloudKit's authenticated creator. The `creatorID` field is written by the client,
+        // so it could name someone else and impersonate them in the developer queue.
+        self.creatorID = PrivateDeletionPolicy.resolvedCreator(record.creatorUserRecordID?.recordName,
+                                                               currentUserRecordID: currentUserRecordID) ?? ""
         self.replies = trustsDeveloperFields ? PrivateReply.decode(record[FieldKey.replies] as? [String] ?? []) : []
         self.lastActivityAt = record[FieldKey.lastActivityAt] as? Date ?? record.creationDate ?? .now
         self.createdAt = record.creationDate ?? .now

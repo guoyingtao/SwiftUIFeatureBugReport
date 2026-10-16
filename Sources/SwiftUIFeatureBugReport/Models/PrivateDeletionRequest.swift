@@ -36,6 +36,16 @@ public struct PrivateDeletionRequest: Identifiable, Sendable, Hashable {
     public let requesterID: String
     public let requestedAt: Date
 
+    /// Memberwise, for tests.
+    init(id: CKRecord.ID, scope: PrivateDeletionScope, reportNames: [String], requesterID: String, requestedAt: Date = Date()) {
+
+        self.id = id
+        self.scope = scope
+        self.reportNames = reportNames
+        self.requesterID = requesterID
+        self.requestedAt = requestedAt
+    }
+
     /// `currentUserRecordID` stands in for CloudKit's `__defaultOwner__` placeholder, which is what a
     /// record created by the signed-in user reports as its creator.
     init?(record: CKRecord, currentUserRecordID: String?) {
@@ -65,22 +75,43 @@ enum PrivateDeletionPolicy {
         return recordName == CKCurrentUserDefaultName ? currentUserRecordID : recordName
     }
 
-    /// The report names covered by a user's own pending requests, for marking rows. `nil` means
-    /// "everything", from an `.all` request.
-    static func pendingReportNames(in requests: [PrivateDeletionRequest]) -> Set<String>? {
+    /// Whether a report is covered by a pending request **from the report's own creator**.
+    ///
+    /// The creator match matters for a developer who has also filed a request of their own: their
+    /// `.all` request must not mark every other user's report in the developer queue.
+    static func isPending(reportName: String, reportCreator: String, in requests: [PrivateDeletionRequest]) -> Bool {
 
-        if requests.contains(where: { $0.scope == .all }) { return nil }
+        guard !reportCreator.isEmpty else { return false }
 
-        return Set(requests.flatMap(\.reportNames))
+        return requests.contains { request in
+
+            request.requesterID == reportCreator
+                && (request.scope == .all || request.reportNames.contains(reportName))
+        }
     }
 
-    /// Whether a report is covered by the given pending requests.
-    static func isPending(reportName: String, in requests: [PrivateDeletionRequest]) -> Bool {
+    /// Whether the requester already has a pending request that covers this one, so it need not be filed
+    /// again. Only requests whose CloudKit creator is the requester count.
+    static func isCovered(scope: PrivateDeletionScope,
+                          reportNames: [String],
+                          requesterID: String,
+                          by existing: [PrivateDeletionRequest]) -> Bool {
 
-        guard let names = pendingReportNames(in: requests) else { return !requests.isEmpty }
+        existing.contains { request in
 
-        return names.contains(reportName)
+            guard request.requesterID == requesterID else { return false }
+
+            switch (request.scope, scope) {
+
+            case (.all, _): return true
+            case (.reports, .all): return false
+            case (.reports, .reports): return Set(reportNames).isSubset(of: request.reportNames)
+            }
+        }
     }
+
+    /// Only private reports may be deleted through a deletion request.
+    static func isDeletableTarget(recordType: String) -> Bool { recordType == RecordType.privateReport }
 
     /// Of the reports a `.reports` request names, the ones the developer may actually delete: those
     /// that exist and were created by the requester. Anything else - a typo, someone else's report

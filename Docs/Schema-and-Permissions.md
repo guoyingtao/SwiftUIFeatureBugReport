@@ -39,8 +39,8 @@ Every included custom record type needs a queryable `___recordID`.
 | `Comment`, `DevComment` | `request`, `requestCreator`, `creatorID` queryable |
 | `Activity` | `request`, `recipientID`, `kind` queryable; creation time sortable |
 | `RequestMetadata` | `request` queryable |
-| `PrivateReport` | `creatorID`, `kind`, `status` queryable; `lastActivityAt` and creation time sortable |
-| `PrivateReportDeletionRequest` | `scope` queryable; creation time sortable |
+| `PrivateReport` | creator (`___createdBy`), `kind`, `status` queryable; `lastActivityAt` and creation time sortable |
+| `PrivateReportDeletionRequest` | creator (`___createdBy`), `scope` queryable; creation time sortable |
 | `Users` | `___recordID` queryable |
 
 `title` is intentionally the only searchable `Request` field. Search-before-submit uses

@@ -87,7 +87,8 @@ struct PrivateReportMappingTests {
         #expect(report.body == "Screenshot attached.")
         #expect(report.kind == .bug)
         #expect(report.status == .inProgress)
-        #expect(report.creatorID == "_user1")
+        // The sender comes from CloudKit's creator, never the client-written field; a fresh record has none.
+        #expect(report.creatorID == "")
         #expect(report.metadata == ["plan": "pro"])
         #expect(report.environment.deviceModel == "iPhone17,1")
         #expect(report.lastActivityAt == Date(timeIntervalSince1970: 1_000))
@@ -141,31 +142,45 @@ struct PrivateDeletionPolicyTests {
 
     private func request(_ scope: PrivateDeletionScope, _ names: [String] = [], requester: String = "_user1") -> PrivateDeletionRequest {
 
-        let record = CKRecord(recordType: RecordType.privateReportDeletionRequest,
-                              recordID: CKRecord.ID(recordName: "privdel_\(UUID().uuidString)"))
-
-        record[FieldKey.scope] = scope.rawValue
-        record[FieldKey.reportNames] = names
-
-        // A freshly made record has no creator, so `requesterID` is empty here; the policy functions
-        // below take the requester explicitly.
-        return PrivateDeletionRequest(record: record, currentUserRecordID: requester)!
+        PrivateDeletionRequest(id: CKRecord.ID(recordName: UUID().uuidString), scope: scope, reportNames: names, requesterID: requester)
     }
 
-    @Test("A request for named reports marks only those reports")
+    @Test("A request for named reports marks only those reports of its requester")
     func namedReports() {
 
         let pending = [request(.reports, ["a", "b"])]
 
-        #expect(PrivateDeletionPolicy.isPending(reportName: "a", in: pending))
-        #expect(PrivateDeletionPolicy.isPending(reportName: "c", in: pending) == false)
+        #expect(PrivateDeletionPolicy.isPending(reportName: "a", reportCreator: "_user1", in: pending))
+        #expect(PrivateDeletionPolicy.isPending(reportName: "c", reportCreator: "_user1", in: pending) == false)
+        #expect(PrivateDeletionPolicy.isPending(reportName: "a", reportCreator: "_user2", in: pending) == false)
     }
 
-    @Test("An all-reports request marks every report; no request marks none")
+    @Test("An all-reports request marks only its requester's reports; no request marks none")
     func allReports() {
 
-        #expect(PrivateDeletionPolicy.isPending(reportName: "anything", in: [request(.all)]))
-        #expect(PrivateDeletionPolicy.isPending(reportName: "anything", in: []) == false)
+        #expect(PrivateDeletionPolicy.isPending(reportName: "anything", reportCreator: "_user1", in: [request(.all)]))
+        #expect(PrivateDeletionPolicy.isPending(reportName: "anything", reportCreator: "_user2", in: [request(.all)]) == false)
+        #expect(PrivateDeletionPolicy.isPending(reportName: "anything", reportCreator: "", in: [request(.all, requester: "")]) == false)
+        #expect(PrivateDeletionPolicy.isPending(reportName: "anything", reportCreator: "_user1", in: []) == false)
+    }
+
+    @Test("Only the requester's own pending requests cover a new one")
+    func coverage() {
+
+        let mine = [request(.reports, ["a", "b"])]
+
+        #expect(PrivateDeletionPolicy.isCovered(scope: .reports, reportNames: ["a"], requesterID: "_user1", by: mine))
+        #expect(PrivateDeletionPolicy.isCovered(scope: .reports, reportNames: ["c"], requesterID: "_user1", by: mine) == false)
+        #expect(PrivateDeletionPolicy.isCovered(scope: .all, reportNames: [], requesterID: "_user1", by: mine) == false)
+        #expect(PrivateDeletionPolicy.isCovered(scope: .reports, reportNames: ["z"], requesterID: "_user1", by: [request(.all)]))
+        #expect(PrivateDeletionPolicy.isCovered(scope: .all, reportNames: [], requesterID: "_user2", by: [request(.all)]) == false)
+    }
+
+    @Test("Only private reports are deletion targets")
+    func targetType() {
+
+        #expect(PrivateDeletionPolicy.isDeletableTarget(recordType: RecordType.privateReport))
+        #expect(PrivateDeletionPolicy.isDeletableTarget(recordType: RecordType.request) == false)
     }
 
     /// The security property: a request naming someone else's report must not get it deleted.
@@ -186,13 +201,6 @@ struct PrivateDeletionPolicyTests {
         #expect(PrivateDeletionPolicy.resolvedCreator(CKCurrentUserDefaultName, currentUserRecordID: "_me") == "_me")
         #expect(PrivateDeletionPolicy.resolvedCreator("_other", currentUserRecordID: "_me") == "_other")
         #expect(PrivateDeletionPolicy.resolvedCreator(nil, currentUserRecordID: "_me") == nil)
-    }
-
-    @Test("Deletion record names are deterministic, so a second request collides")
-    func deterministicNames() {
-
-        #expect(RecordID.privateDeletion(report: "r1") == RecordID.privateDeletion(report: "r1"))
-        #expect(RecordID.privateDeletionAll(user: "_u") != RecordID.privateDeletion(report: "_u"))
     }
 
     @Test("A pending deletion keeps the counts non-empty")

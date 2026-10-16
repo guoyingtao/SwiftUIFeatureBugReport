@@ -57,12 +57,9 @@ import Observation
     /// processed it yet.
     public func isDeletionPending(_ report: PrivateReport) -> Bool {
 
-        PrivateDeletionPolicy.isPending(reportName: report.id.recordName, in: myDeletionRequests)
-            || pendingDeletionRequests.contains { request in
-
-                request.requesterID == report.creatorID
-                    && (request.scope == .all || request.reportNames.contains(report.id.recordName))
-            }
+        PrivateDeletionPolicy.isPending(reportName: report.id.recordName,
+                                        reportCreator: report.creatorID,
+                                        in: myDeletionRequests + pendingDeletionRequests)
     }
 
     // MARK: - Reading
@@ -76,7 +73,10 @@ import Observation
             return
         }
 
-        let predicate = NSPredicate(format: "%K == %@", FieldKey.creatorID, me)
+        // By CloudKit's own creator reference: the `creatorID` field is written by the client and proves
+        // nothing.
+        let reference = CKRecord.Reference(recordID: CKRecord.ID(recordName: me), action: .none)
+        let predicate = NSPredicate(format: "creatorUserRecordID == %@", reference)
         let started = generation
 
         if let loaded = await loadAll(matching: predicate), started == generation { myReports = loaded }
@@ -128,8 +128,14 @@ import Observation
     /// type (an older schema) reads as no requests.
     private func fetchDeletionRequests(matching predicate: NSPredicate) async throws -> [PrivateDeletionRequest] {
 
+        try await Self.fetchDeletionRequests(matching: predicate, currentUserRecordID: container.currentUserRecordID, in: database)
+    }
+
+    static func fetchDeletionRequests(matching predicate: NSPredicate,
+                                      currentUserRecordID me: String?,
+                                      in database: CKDatabase) async throws -> [PrivateDeletionRequest] {
+
         let query = CKQuery(recordType: RecordType.privateReportDeletionRequest, predicate: predicate)
-        let me = container.currentUserRecordID
 
         var collected: [PrivateDeletionRequest] = []
         var cursor: CKQueryOperation.Cursor?
@@ -427,54 +433,55 @@ import Observation
     /// Asks the developer to delete one report. Asking again while one is pending is not an error.
     public func requestDeletion(of report: PrivateReport) async throws {
 
-        try await createDeletionRequest(recordName: RecordID.privateDeletion(report: report.id.recordName),
-                                        scope: .reports,
-                                        reportNames: [report.id.recordName])
+        try await createDeletionRequest(scope: .reports, reportNames: [report.id.recordName])
     }
 
     /// Asks the developer to delete every private report this user has sent. Used by delete-my-data.
     public func requestDeletionOfAll() async throws {
 
-        guard let me = container.currentUserRecordID else { throw FeedbackError.notSignedIn }
-
-        try await createDeletionRequest(recordName: RecordID.privateDeletionAll(user: me), scope: .all, reportNames: [])
+        try await createDeletionRequest(scope: .all, reportNames: [])
     }
 
-    private func createDeletionRequest(recordName: String, scope: PrivateDeletionScope, reportNames: [String]) async throws {
+    private func createDeletionRequest(scope: PrivateDeletionScope, reportNames: [String]) async throws {
 
-        guard container.currentUserRecordID != nil else { throw FeedbackError.notSignedIn }
+        guard let me = container.currentUserRecordID else { throw FeedbackError.notSignedIn }
 
         let started = generation
 
-        try await Self.saveDeletionRequest(recordName: recordName, scope: scope, reportNames: reportNames, in: database)
+        try await Self.saveDeletionRequest(scope: scope, reportNames: reportNames, requesterID: me, in: database)
 
         if started == generation { await loadMyDeletionRequests() }
     }
 
-    /// Creates a deletion request unless one with this deterministic name already exists.
+    /// Files a deletion request unless one of the user's own pending requests already covers it.
     ///
-    /// Checked by fetching first rather than by relying on the save colliding: the creator has no WRITE
-    /// on the record type, so a second save could come back as a permission failure instead of the
-    /// usual "record already exists" - and either way the request is already pending.
-    static func saveDeletionRequest(recordName: String,
-                                    scope: PrivateDeletionScope,
+    /// Each request gets a fresh, CloudKit-generated record name. A predictable name such as
+    /// `privdel_all_<user>` could be created first by another account - user record IDs are visible on
+    /// the public board - and would then block or fake the victim's request. Duplicates are found
+    /// instead by querying requests whose **CloudKit creator** is this user, which no one else can forge.
+    static func saveDeletionRequest(scope: PrivateDeletionScope,
                                     reportNames: [String],
+                                    requesterID: String,
                                     in database: CKDatabase) async throws {
 
-        let recordID = CKRecord.ID(recordName: recordName)
+        let reference = CKRecord.Reference(recordID: CKRecord.ID(recordName: requesterID), action: .none)
+
+        let existing: [PrivateDeletionRequest]
 
         do {
 
-            _ = try await database.record(for: recordID)
-
-            return
+            existing = try await fetchDeletionRequests(matching: NSPredicate(format: "creatorUserRecordID == %@", reference),
+                                                       currentUserRecordID: requesterID,
+                                                       in: database)
         }
         catch {
 
-            guard CloudKitErrorHandler.isRecordMissing(error) else { throw CloudKitErrorHandler.classify(error) }
+            throw CloudKitErrorHandler.classifyQuery(error)
         }
 
-        let record = CKRecord(recordType: RecordType.privateReportDeletionRequest, recordID: recordID)
+        guard !PrivateDeletionPolicy.isCovered(scope: scope, reportNames: reportNames, requesterID: requesterID, by: existing) else { return }
+
+        let record = CKRecord(recordType: RecordType.privateReportDeletionRequest)
 
         record[FieldKey.scope] = scope.rawValue
         record[FieldKey.reportNames] = reportNames
@@ -485,8 +492,7 @@ import Observation
         }
         catch {
 
-            // Created by another device between the fetch and the save.
-            guard CloudKitErrorHandler.isDuplicateRecord(error) else { throw CloudKitErrorHandler.classify(error) }
+            throw CloudKitErrorHandler.classify(error)
         }
     }
 
@@ -598,6 +604,10 @@ import Observation
                 if CloudKitErrorHandler.isRecordMissing(error) { continue }
                 throw error
             }
+
+            // `reportNames` is client-written and `records(for:)` fetches any type. Without this, naming
+            // the requester's own public `Request` would delete it, and cascade its votes and replies.
+            guard PrivateDeletionPolicy.isDeletableTarget(recordType: record.recordType) else { continue }
 
             guard let owner = PrivateDeletionPolicy.resolvedCreator(record.creatorUserRecordID?.recordName,
                                                                     currentUserRecordID: me) else { continue }
