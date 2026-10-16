@@ -60,6 +60,13 @@ public struct MyDataView: View {
                             .foregroundStyle(.secondary)
                         LabeledContent("Replies", value: store.accountData.counts.comments.formatted(.number))
                         LabeledContent("Reports", value: store.accountData.counts.reports.formatted(.number))
+
+                        // Shown whenever there are any, even with private feedback since turned off -
+                        // they are still deleted below.
+                        if store.configuration.privateFeedback != .disabled || store.accountData.counts.privateReports > 0 {
+
+                            LabeledContent("Private reports", value: store.accountData.counts.privateReports.formatted(.number))
+                        }
                     }
 
                 } header: { Text("Your activity") }

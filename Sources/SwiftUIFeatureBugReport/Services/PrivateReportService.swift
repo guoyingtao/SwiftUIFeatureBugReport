@@ -24,13 +24,22 @@ import Observation
 
     private var database: CKDatabase { container.database }
 
+    /// Bumped by `reset()`. Every asynchronous operation captures it before its first `await` and
+    /// drops its result if it changed meanwhile - otherwise a load started for the previous iCloud
+    /// account could finish after an account switch and put that account's private reports back on
+    /// screen for the new one.
+    private var generation = 0
+
     public init(container: FeedbackContainer) {
 
         self.container = container
     }
 
+    /// Clears everything derived from the current identity and invalidates operations still in flight.
     func reset() {
 
+        generation += 1
+        isLoading = false
         myReports = []
         allReports = []
         error = nil
@@ -48,8 +57,9 @@ import Observation
         }
 
         let predicate = NSPredicate(format: "%K == %@", FieldKey.creatorID, me)
+        let started = generation
 
-        if let loaded = await loadAll(matching: predicate) { myReports = loaded }
+        if let loaded = await loadAll(matching: predicate), started == generation { myReports = loaded }
     }
 
     /// Developer only: loads every report, every page.
@@ -57,15 +67,21 @@ import Observation
 
         guard container.isDeveloper else { return }
 
-        if let loaded = await loadAll(matching: NSPredicate(value: true)) { allReports = loaded }
+        let started = generation
+
+        if let loaded = await loadAll(matching: NSPredicate(value: true)), started == generation { allReports = loaded }
     }
 
     /// Fetches the full record including its images. The **only** place the assets are fetched.
     public func loadDetail(_ report: PrivateReport) async -> PrivateReport {
 
+        let started = generation
+
         do {
 
             let record = try await database.record(for: report.id)
+
+            guard started == generation else { return report }
 
             guard var detailed = PrivateReport(record: record) else { return report }
 
@@ -79,6 +95,8 @@ import Observation
             return detailed
         }
         catch {
+
+            guard started == generation else { return report }
 
             if CloudKitErrorHandler.isRecordMissing(error) {
 
@@ -95,15 +113,17 @@ import Observation
 
     /// Follows the query cursor to the end, like `VoteService.loadTallies()`.
     ///
-    /// Returns `nil` only when nothing at all could be read, so a failed refresh leaves the previous
-    /// list on screen rather than blanking it. A failure after the first page keeps what was read
-    /// and surfaces the error.
+    /// Returns `nil` when nothing at all could be read, so a failed refresh leaves the previous list
+    /// on screen rather than blanking it, and also when `reset()` ran during the load - a stale result
+    /// is never handed back. A failure after the first page keeps what was read and surfaces the error.
     private func loadAll(matching predicate: NSPredicate) async -> [PrivateReport]? {
+
+        let started = generation
 
         isLoading = true
         error = nil
 
-        defer { isLoading = false }
+        defer { if started == generation { isLoading = false } }
 
         let query = CKQuery(recordType: RecordType.privateReport, predicate: predicate)
         query.sortDescriptors = [NSSortDescriptor(key: FieldKey.creationDate, ascending: false)]
@@ -129,6 +149,8 @@ import Observation
                                                       desiredKeys: PrivateReport.listDesiredKeys)
                 }
 
+                guard started == generation else { return nil }
+
                 collected += page.matchResults
                     .compactMap { try? $0.1.get() }
                     .compactMap { PrivateReport(record: $0) }
@@ -137,6 +159,8 @@ import Observation
                 isFirstPage = false
             }
             catch {
+
+                guard started == generation else { return nil }
 
                 self.error = CloudKitErrorHandler.classifyQuery(error)
 
@@ -162,6 +186,8 @@ import Observation
                        metadata: [String: String]) async throws -> PrivateReport {
 
         guard let creatorID = container.currentUserRecordID else { throw FeedbackError.notSignedIn }
+
+        let started = generation
 
         let encodedMetadata = metadata.isEmpty ? "" : try RequestMetadata.encode(metadata)
 
@@ -204,7 +230,9 @@ import Observation
             throw FeedbackError.underlying(String(localized: "Could not read back the saved report."))
         }
 
-        myReports.insert(saved, at: 0)
+        // Saved either way - it is the previous account's record - but only listed if that account is
+        // still the one signed in.
+        if started == generation { myReports.insert(saved, at: 0) }
 
         return saved
     }
@@ -241,6 +269,8 @@ import Observation
     /// `lastActivityAt`. A concurrent edit surfaces as an error rather than being overwritten.
     private func mutate(_ report: PrivateReport, _ change: (CKRecord) -> Void) async throws {
 
+        let started = generation
+
         do {
 
             let record = try await database.record(for: report.id)
@@ -250,7 +280,7 @@ import Observation
 
             let saved = try await database.save(record)
 
-            if var updated = PrivateReport(record: saved) {
+            if started == generation, var updated = PrivateReport(record: saved) {
 
                 updated.imageURLs = report.imageURLs
                 replaceLocally(updated)
@@ -262,12 +292,14 @@ import Observation
         }
     }
 
+    /// Swaps in a fresher copy wherever the report is listed.
     private func replaceLocally(_ updated: PrivateReport) {
 
         if let index = myReports.firstIndex(where: { $0.id == updated.id }) { myReports[index] = updated }
         if let index = allReports.firstIndex(where: { $0.id == updated.id }) { allReports[index] = updated }
     }
 
+    /// Drops a report that no longer exists from both lists.
     private func removeLocally(_ id: CKRecord.ID) {
 
         myReports.removeAll { $0.id == id }

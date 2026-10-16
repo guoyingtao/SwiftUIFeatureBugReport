@@ -342,7 +342,9 @@ struct PrivateReportDetailView: View {
 
                 try await store.privateReports.setStatus(status, on: report)
 
-                report.status = status
+                // Reloaded rather than patched: a status-only edit to this copy would keep stale
+                // replies and activity if a reply landed while the save was in flight.
+                report = await store.privateReports.loadDetail(report)
             }
             catch {
 

@@ -507,7 +507,7 @@ public struct FeedbackBoardView: View {
                    label: { Label("My private reports", systemImage: "lock") })
         }
 
-        if store.container.isDeveloper {
+        if offersPrivateFeedback && store.container.isDeveloper {
 
             Button(action: { destination = .privatePortal },
                    label: { Label("Private reports", systemImage: "lock.shield") })
@@ -526,7 +526,7 @@ public struct FeedbackBoardView: View {
                 label: { Label("My private reports", systemImage: "lock") }
         }
 
-        if store.container.isDeveloper {
+        if offersPrivateFeedback && store.container.isDeveloper {
 
             NavigationLink { PrivateReportsView(store: store, scope: .all, embedsNavigationStack: false) }
                 label: { Label("Private reports", systemImage: "lock.shield") }
@@ -535,7 +535,8 @@ public struct FeedbackBoardView: View {
 #endif
     }
 
-    /// Shown even to a developer, who may want to see the queue from a submitter's side.
+    /// Gates both private entries. While `.disabled` the schema may not contain `PrivateReport`, so
+    /// neither the user's list nor the developer queue is offered.
     private var offersPrivateFeedback: Bool { store.configuration.privateFeedback != .disabled }
 
     /// A dot, not a number.

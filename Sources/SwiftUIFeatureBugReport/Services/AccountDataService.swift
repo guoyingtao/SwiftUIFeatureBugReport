@@ -15,7 +15,13 @@ public struct MyDataCounts: Sendable, Equatable {
     public var comments = 0
     public var reports = 0
 
-    public var isEmpty: Bool { requests == 0 && votes == 0 && comments == 0 && reports == 0 }
+    /// The user's own `PrivateReport` records. Zero when the record type is not in the schema.
+    public var privateReports = 0
+
+    public var isEmpty: Bool {
+
+        requests == 0 && votes == 0 && comments == 0 && reports == 0 && privateReports == 0
+    }
 }
 
 @Observable @MainActor public final class AccountDataService {
@@ -47,11 +53,13 @@ public struct MyDataCounts: Sendable, Equatable {
         async let votes = recordIDs(ofType: RecordType.vote, createdBy: me).count
         async let comments = commentRecordIDs(createdBy: me).count
         async let reports = recordIDs(ofType: RecordType.report, createdBy: me).count
+        async let privateReports = privateReportCount(createdBy: me)
 
         counts = MyDataCounts(requests: await requests,
                               votes: await votes,
                               comments: await comments,
-                              reports: await reports)
+                              reports: await reports,
+                              privateReports: await privateReports)
     }
 
     /// Real deletion (§6.8).
@@ -101,17 +109,16 @@ public struct MyDataCounts: Sendable, Equatable {
             // and leaving it would keep notifying an account whose data is supposed to be gone.
             try await CloudKitBatch.delete(await recordIDs(ofType: RecordType.follow, createdBy: creatorID), in: database)
 
-            // Private reports are this user's own text and images. Skipped when the feature is off,
-            // because the record type may not exist in the integrator's schema at all.
-            if container.configuration.privateFeedback != .disabled {
-
-                try await CloudKitBatch.delete(await recordIDs(ofType: RecordType.privateReport, createdBy: creatorID), in: database)
-            }
+            // Private reports are this user's own text and images. Deleted whatever `privateFeedback`
+            // says now: turning new submissions off must not leave earlier ones undeletable. A schema
+            // without the record type simply has none.
+            try await CloudKitBatch.delete(try await privateReportIDs(createdBy: creatorID), in: database)
 
             counts = MyDataCounts(requests: 0,
                                   votes: await recordIDs(ofType: RecordType.vote, createdBy: creatorID).count,
                                   comments: 0,
-                                  reports: 0)
+                                  reports: 0,
+                                  privateReports: 0)
         }
         catch {
 
@@ -165,5 +172,74 @@ public struct MyDataCounts: Sendable, Equatable {
         while cursor != nil
 
         return collected
+    }
+
+    /// Counts the user's private reports for `MyDataView`. A missing record type counts as none; any
+    /// other failure is surfaced and counts as none, like the other counts.
+    private func privateReportCount(createdBy userRecordName: String) async -> Int {
+
+        do {
+
+            return try await privateReportIDs(createdBy: userRecordName).count
+        }
+        catch {
+
+            self.error = CloudKitErrorHandler.classify(error)
+
+            return 0
+        }
+    }
+
+    /// Every `PrivateReport` the user created, all pages.
+    ///
+    /// Unlike `recordIDs(ofType:createdBy:)` this **throws**, so a failed read stops a deletion instead
+    /// of reporting success with the user's private text and images still stored. The one exception is
+    /// a schema that never had `PrivateReport`: CloudKit answers a query for an unknown record type
+    /// with `.unknownItem`, and that means there is nothing to delete.
+    private func privateReportIDs(createdBy userRecordName: String) async throws -> [CKRecord.ID] {
+
+        let reference = CKRecord.Reference(recordID: CKRecord.ID(recordName: userRecordName), action: .none)
+        let predicate = NSPredicate(format: "creatorUserRecordID == %@", reference)
+
+        var collected: [CKRecord.ID] = []
+        var cursor: CKQueryOperation.Cursor?
+
+        repeat {
+
+            do {
+
+                let page: (matchResults: [(CKRecord.ID, Result<CKRecord, any Error>)], queryCursor: CKQueryOperation.Cursor?)
+
+                if let cursor {
+
+                    page = try await database.records(continuingMatchFrom: cursor, desiredKeys: [])
+                }
+                else {
+
+                    page = try await database.records(matching: CKQuery(recordType: RecordType.privateReport, predicate: predicate),
+                                                      desiredKeys: [])
+                }
+
+                collected.append(contentsOf: page.matchResults.map { $0.0 })
+
+                cursor = page.queryCursor
+            }
+            catch {
+
+                if Self.isMissingRecordType(error, isFirstPage: collected.isEmpty && cursor == nil) { return [] }
+
+                throw error
+            }
+        }
+        while cursor != nil
+
+        return collected
+    }
+
+    /// Only the very first query can mean "this record type does not exist". Once a page has come
+    /// back the type evidently exists, so a later `.unknownItem` is a real failure.
+    nonisolated static func isMissingRecordType(_ error: Error, isFirstPage: Bool) -> Bool {
+
+        isFirstPage && CloudKitErrorHandler.isRecordMissing(error)
     }
 }

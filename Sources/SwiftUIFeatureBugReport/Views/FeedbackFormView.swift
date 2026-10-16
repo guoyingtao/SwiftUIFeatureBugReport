@@ -23,6 +23,10 @@ public struct FeedbackFormView: View {
 
     @State private var isSubmitting = false
     @State private var showSuccess = false
+
+    /// The route the last successful submission actually took, captured when it started. The success
+    /// alert reads this rather than `isPrivate`, which the user can change while the save is pending.
+    @State private var submittedPrivately = false
     @State private var error: FeedbackError?
 
     @State private var matches: [FeedbackRequest] = []
@@ -226,9 +230,9 @@ public struct FeedbackFormView: View {
 
         } message: {
 
-            if isPrivate {
+            if submittedPrivately {
 
-                Text("Your feedback has been sent privately. Only the developer can see it.")
+                Text("Your feedback has been sent privately. Only you and the developer can see it.")
             }
             else {
 
@@ -391,30 +395,37 @@ public struct FeedbackFormView: View {
         isSubmitting = true
         error = nil
 
+        // Snapshot everything the save depends on now. The form stays editable while CloudKit is
+        // pending, and the route must not change underneath it.
+        let sendPrivately = isPrivate
+        let kind = type
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedBody = body_.trimmingCharacters(in: .whitespacesAndNewlines)
+        let images = imageData
+        let attachedMetadata = includeMetadata ? metadata : [:]
+
         Task {
 
             do {
 
-                let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-                let trimmedBody = body_.trimmingCharacters(in: .whitespacesAndNewlines)
-
-                if isPrivate {
+                if sendPrivately {
 
                     _ = try await store.privateReports.submit(title: trimmedTitle,
                                                               body: trimmedBody,
-                                                              kind: type,
-                                                              imageData: imageData,
-                                                              metadata: includeMetadata ? metadata : [:])
+                                                              kind: kind,
+                                                              imageData: images,
+                                                              metadata: attachedMetadata)
                 }
                 else {
 
                     _ = try await store.submit(title: trimmedTitle,
                                                body: trimmedBody,
-                                               type: type,
-                                               imageData: imageData,
-                                               metadata: includeMetadata ? metadata : [:])
+                                               type: kind,
+                                               imageData: images,
+                                               metadata: attachedMetadata)
                 }
 
+                submittedPrivately = sendPrivately
                 showSuccess = true
             }
             catch {

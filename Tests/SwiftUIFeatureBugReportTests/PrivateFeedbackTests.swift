@@ -111,3 +111,26 @@ struct PrivateReportMappingTests {
         #expect(replies.map(\.message) == ["First", "Second"])
     }
 }
+
+
+@Suite("Private reports in account data")
+struct PrivateReportAccountDataTests {
+
+    /// Without this, a user whose only data is private reports would see the delete button disabled.
+    @Test("Private reports alone make the counts non-empty")
+    func privateReportsCount() {
+
+        #expect(MyDataCounts().isEmpty)
+        #expect(MyDataCounts(privateReports: 1).isEmpty == false)
+    }
+
+    @Test("Only an unknown item on the first page means the record type is missing")
+    func missingRecordType() {
+
+        let unknown = CKError(.unknownItem)
+
+        #expect(AccountDataService.isMissingRecordType(unknown, isFirstPage: true))
+        #expect(AccountDataService.isMissingRecordType(unknown, isFirstPage: false) == false)
+        #expect(AccountDataService.isMissingRecordType(CKError(.networkFailure), isFirstPage: true) == false)
+    }
+}
