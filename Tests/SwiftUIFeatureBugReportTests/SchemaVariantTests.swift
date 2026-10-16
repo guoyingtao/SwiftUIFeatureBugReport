@@ -23,7 +23,7 @@ struct SchemaVariantTests {
     func sharedTypes() throws {
 
         let schemas = try [schema(named: "Schema.ckdb"), schema(named: "Schema-NoComments.ckdb")]
-        let required = ["Activity", "DevComment", "Follow", "Report", "Request",
+        let required = ["Activity", "DevComment", "Follow", "PrivateReport", "Report", "Request",
                         "RequestMetadata", "Users", "Vote"]
 
         for contents in schemas {
@@ -45,5 +45,25 @@ struct SchemaVariantTests {
 
         #expect(comments.contains("RECORD TYPE Comment ("))
         #expect(!noComments.contains("RECORD TYPE Comment ("))
+    }
+
+    /// The whole point of `PrivateReport`: CloudKit itself refuses other users. A `_world` grant
+    /// slipping into either schema would make every private report public.
+    @Test("PrivateReport is readable only by its creator and the dev role, in both variants")
+    func privateReportPermissions() throws {
+
+        for name in ["Schema.ckdb", "Schema-NoComments.ckdb"] {
+
+            let contents = try schema(named: name)
+
+            let start = try #require(contents.range(of: "RECORD TYPE PrivateReport ("))
+            let end = try #require(contents.range(of: ");", range: start.upperBound..<contents.endIndex))
+            let block = contents[start.upperBound..<end.lowerBound]
+
+            #expect(!block.contains("_world"))
+            #expect(block.contains("GRANT READ, WRITE TO \"_creator\""))
+            #expect(block.contains("GRANT CREATE TO \"_icloud\""))
+            #expect(block.contains("GRANT READ, WRITE TO dev"))
+        }
     }
 }
