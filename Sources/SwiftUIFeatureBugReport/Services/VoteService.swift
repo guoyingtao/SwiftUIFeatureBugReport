@@ -21,6 +21,10 @@ import Observation
 
     public private(set) var isLoading = false
 
+    /// Set when `loadTallies()` stopped early. The partial tallies are still published - a half-loaded
+    /// board beats an empty one - but callers can now tell the counts may be low.
+    public private(set) var loadError: FeedbackError?
+
     private let container: FeedbackContainer
 
     private var database: CKDatabase { container.database }
@@ -48,10 +52,11 @@ import Observation
     public func loadTallies() async {
 
         isLoading = true
+        loadError = nil
 
         defer { isLoading = false }
 
-        var counts: [CKRecord.ID: Int] = [:]
+        var entries: [VoteEntry] = []
         var mine: Set<CKRecord.ID> = []
 
         let query = CKQuery(recordType: RecordType.vote, predicate: NSPredicate(value: true))
@@ -79,7 +84,8 @@ import Observation
                     guard let record = try? result.get(),
                           let reference = record[FieldKey.request] as? CKRecord.Reference else { continue }
 
-                    counts[reference.recordID, default: 0] += 1
+                    entries.append(VoteEntry(request: reference.recordID,
+                                             voter: record.creatorUserRecordID?.recordName ?? record.recordID.recordName))
 
                     if container.isCurrentUser(record.creatorUserRecordID) {
 
@@ -91,14 +97,42 @@ import Observation
             }
             catch {
 
-                // Keep whatever was counted; a half-loaded tally beats an empty board.
+                // Keep whatever was counted; a half-loaded tally beats an empty board. Surface it though.
+                loadError = CloudKitErrorHandler.classifyQuery(error)
+
                 break
             }
         }
         while cursor != nil
 
-        tallies = counts
+        tallies = Self.distinctTallies(entries)
         myVotes = mine
+    }
+
+    /// One vote, reduced to what counting needs.
+    struct VoteEntry: Hashable {
+
+        let request: CKRecord.ID
+        /// The creator's record name, or - if CloudKit did not return one - the vote's own record name,
+        /// so an anonymous row still counts once rather than being dropped.
+        let voter: String
+    }
+
+    /// Counts **distinct voters** per request, not raw `Vote` records.
+    ///
+    /// The deterministic record name only stops duplicates from well-behaved clients. The schema lets
+    /// any iCloud user create `Vote` records, so someone talking to CloudKit directly could save several
+    /// under different names. Deduplicating on (request, creator) makes each account count once.
+    nonisolated static func distinctTallies(_ entries: [VoteEntry]) -> [CKRecord.ID: Int] {
+
+        var counts: [CKRecord.ID: Int] = [:]
+
+        for entry in Set(entries) {
+
+            counts[entry.request, default: 0] += 1
+        }
+
+        return counts
     }
 
     /// Saves with the deterministic record name from §4.
@@ -175,17 +209,40 @@ import Observation
 
         let query = CKQuery(recordType: RecordType.vote, predicate: predicate)
 
-        do {
+        var voters: Set<String> = []
+        var cursor: CKQueryOperation.Cursor?
 
-            let page = try await database.records(matching: query, desiredKeys: [FieldKey.request])
+        // Paged like `loadTallies()`: a single page silently dropped voters beyond the first batch.
+        repeat {
 
-            return page.matchResults
-                .compactMap { try? $0.1.get() }
-                .compactMap { $0.creatorUserRecordID?.recordName }
+            do {
+
+                let page: (matchResults: [(CKRecord.ID, Result<CKRecord, any Error>)], queryCursor: CKQueryOperation.Cursor?)
+
+                if let cursor {
+
+                    page = try await database.records(continuingMatchFrom: cursor, desiredKeys: [FieldKey.request])
+                }
+                else {
+
+                    page = try await database.records(matching: query, desiredKeys: [FieldKey.request])
+                }
+
+                for (_, result) in page.matchResults {
+
+                    if let name = (try? result.get())?.creatorUserRecordID?.recordName { voters.insert(name) }
+                }
+
+                cursor = page.queryCursor
+            }
+            catch {
+
+                // Notify whoever was found so far rather than nobody.
+                break
+            }
         }
-        catch {
+        while cursor != nil
 
-            return []
-        }
+        return Array(voters)
     }
 }
