@@ -17,6 +17,9 @@ enum RecordType {
     static let activity = "Activity"
     static let follow = "Follow"
     static let requestMetadata = "RequestMetadata"
+
+    /// Readable only by its creator and the `dev` role - no `_world` grant. See `PrivateReport`.
+    static let privateReport = "PrivateReport"
 }
 
 
@@ -52,6 +55,9 @@ enum FieldKey {
     static let requestTitle = "requestTitle"
     static let message = "message"
     static let payload = "payload"
+
+    // PrivateReport (also reuses title, body, kind, status, images, creatorID, device fields, payload)
+    static let replies = "replies"
 
     /// CloudKit's own creation timestamp, as addressed from an `NSSortDescriptor`. The matching
     /// Dashboard index is listed as `createdTimestamp` on the record type - the two names refer to the

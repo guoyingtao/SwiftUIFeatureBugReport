@@ -46,17 +46,25 @@ public struct FeedbackConfiguration: Sendable {
     /// attached before this was turned off still display.
     public let allowImageAttachments: Bool
 
+    /// Whether submissions can be sent privately, to the developer only. See `PrivateFeedbackMode`.
+    ///
+    /// Defaults to `.disabled` because it needs the `PrivateReport` record type, which a schema
+    /// deployed before this option existed will not have. Deploy the schema first, then turn it on.
+    public let privateFeedback: PrivateFeedbackMode
+
     public init(containerIdentifier: String,
                 developerUserRecordIDs: [String] = [],
                 reportThreshold: Int = 3,
                 allowComments: Bool = true,
-                allowImageAttachments: Bool = true) {
+                allowImageAttachments: Bool = true,
+                privateFeedback: PrivateFeedbackMode = .disabled) {
 
         self.containerIdentifier = containerIdentifier
         self.developerUserRecordIDs = developerUserRecordIDs
         self.reportThreshold = reportThreshold
         self.allowComments = allowComments
         self.allowImageAttachments = allowImageAttachments
+        self.privateFeedback = privateFeedback
     }
 
 }

@@ -101,6 +101,13 @@ public struct MyDataCounts: Sendable, Equatable {
             // and leaving it would keep notifying an account whose data is supposed to be gone.
             try await CloudKitBatch.delete(await recordIDs(ofType: RecordType.follow, createdBy: creatorID), in: database)
 
+            // Private reports are this user's own text and images. Skipped when the feature is off,
+            // because the record type may not exist in the integrator's schema at all.
+            if container.configuration.privateFeedback != .disabled {
+
+                try await CloudKitBatch.delete(await recordIDs(ofType: RecordType.privateReport, createdBy: creatorID), in: database)
+            }
+
             counts = MyDataCounts(requests: 0,
                                   votes: await recordIDs(ofType: RecordType.vote, createdBy: creatorID).count,
                                   comments: 0,
