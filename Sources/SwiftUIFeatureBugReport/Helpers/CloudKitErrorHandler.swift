@@ -125,6 +125,14 @@ enum CloudKitErrorHandler {
     }
 
     /// The record is gone - a developer deleted it. Drop it from the local list; never a toast.
+    /// Only the very first query can mean "this record type does not exist" - CloudKit answers a query
+    /// for an unknown type with `.unknownItem`. Once a page has come back the type evidently exists, so
+    /// a later `.unknownItem` is a real failure.
+    static func isMissingRecordType(_ error: Error, isFirstPage: Bool) -> Bool {
+
+        isFirstPage && isRecordMissing(error)
+    }
+
     static func isRecordMissing(_ error: Error) -> Bool {
 
         guard let ckError = error as? CKError else { return false }

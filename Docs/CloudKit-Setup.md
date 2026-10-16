@@ -79,14 +79,16 @@ renamed or retyped, so validate changes in Development first.
 
 ## Private feedback
 
-`PrivateReport` ships in both schema files. If your container was set up from an earlier schema:
+`PrivateReport` and `PrivateReportDeletionRequest` ship in both schema files. If your container was set
+up from an earlier schema:
 
 1. In CloudKit Console, open your container's **Development** environment.
 2. Import the updated `Schema.ckdb` or `Schema-NoComments.ckdb` (**Schema → Import Schema**), or add
-   the `PrivateReport` record type by hand with the fields and indexes listed in
+   both record types by hand with the fields and indexes listed in
    [Schema and permissions](Schema-and-Permissions.md).
-3. Open **Schema → Security Roles** and check the `PrivateReport` grants: `_creator` Read and Write,
-   `_icloud` Create, `dev` Read and Write, and nothing for `_world`.
+3. Open **Schema → Security Roles** and check the grants on both types: `_creator` Read **only**,
+   `_icloud` Create, `dev` Read and Write, and nothing for `_world`. If you imported an earlier
+   version of this branch, `_creator` may still have Write on `PrivateReport`: remove it.
 4. Set `privateFeedback` to `.optional` or `.bugsAndAttachments` in a Development build.
 
 Verify the privacy before deploying, with two Apple Accounts on two devices or simulators:
@@ -104,6 +106,14 @@ Verify the privacy before deploying, with two Apple Accounts on two devices or s
    from the board's "more" menu: reports from both A and B must be listed. Open one, change its status
    and send a reply.
 6. Back on **A**, refresh "My private reports": the status and the reply must show.
+7. As **A**, try to modify and to delete A's own report directly, for example with temporary debug
+   calls to `publicCloudDatabase.save(_:)` after changing `status` and to `deleteRecord(withID:)`. Both
+   must fail with a permission error. Delete the debug calls afterwards.
+8. As **A**, choose "Ask the developer to delete this" on one report, then "Delete my data" in
+   "My requests". The report is marked "Deletion requested", and "My requests" shows the pending request.
+9. As the **developer**, open "Private reports": both requests are listed under "Deletion requests".
+   Delete them: A's reports and the requests disappear. A request naming B's report, created by hand in
+   the Console as A, must delete nothing of B's.
 
 Then deploy the schema to Production (**Deploy Schema Changes**) and repeat steps 1, 2 and 5 against
 Production before release.
@@ -120,5 +130,8 @@ Production before release.
 - [ ] Delete-my-data succeeds.
 - [ ] If private feedback is on: another account cannot see a private report, and the developer can
       list, reply to and update all of them.
+- [ ] A submitter cannot modify or delete their own private report, and a deletion request from them
+      shows up in the developer queue and can be processed.
+- [ ] Someone is responsible for processing deletion requests promptly.
 
 See [Schema and permissions](Schema-and-Permissions.md) for the index and grant checklist.

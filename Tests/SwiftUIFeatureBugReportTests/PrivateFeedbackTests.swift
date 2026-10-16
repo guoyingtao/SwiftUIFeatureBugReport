@@ -134,3 +134,70 @@ struct PrivateReportAccountDataTests {
         #expect(AccountDataService.isMissingRecordType(CKError(.networkFailure), isFirstPage: true) == false)
     }
 }
+
+
+@Suite("Private report deletion requests")
+struct PrivateDeletionPolicyTests {
+
+    private func request(_ scope: PrivateDeletionScope, _ names: [String] = [], requester: String = "_user1") -> PrivateDeletionRequest {
+
+        let record = CKRecord(recordType: RecordType.privateReportDeletionRequest,
+                              recordID: CKRecord.ID(recordName: "privdel_\(UUID().uuidString)"))
+
+        record[FieldKey.scope] = scope.rawValue
+        record[FieldKey.reportNames] = names
+
+        // A freshly made record has no creator, so `requesterID` is empty here; the policy functions
+        // below take the requester explicitly.
+        return PrivateDeletionRequest(record: record, currentUserRecordID: requester)!
+    }
+
+    @Test("A request for named reports marks only those reports")
+    func namedReports() {
+
+        let pending = [request(.reports, ["a", "b"])]
+
+        #expect(PrivateDeletionPolicy.isPending(reportName: "a", in: pending))
+        #expect(PrivateDeletionPolicy.isPending(reportName: "c", in: pending) == false)
+    }
+
+    @Test("An all-reports request marks every report; no request marks none")
+    func allReports() {
+
+        #expect(PrivateDeletionPolicy.isPending(reportName: "anything", in: [request(.all)]))
+        #expect(PrivateDeletionPolicy.isPending(reportName: "anything", in: []) == false)
+    }
+
+    /// The security property: a request naming someone else's report must not get it deleted.
+    @Test("Only reports created by the requester are deletable, once each")
+    func ownership() {
+
+        let deletable = PrivateDeletionPolicy.deletableReportNames(requested: ["mine", "theirs", "mine", "gone"],
+                                                                   owners: ["mine": "_user1", "theirs": "_user2"],
+                                                                   requesterID: "_user1")
+
+        #expect(deletable == ["mine"])
+        #expect(PrivateDeletionPolicy.deletableReportNames(requested: ["mine"], owners: ["mine": ""], requesterID: "").isEmpty)
+    }
+
+    @Test("CloudKit's current-user placeholder resolves to the signed-in user")
+    func resolvesPlaceholder() {
+
+        #expect(PrivateDeletionPolicy.resolvedCreator(CKCurrentUserDefaultName, currentUserRecordID: "_me") == "_me")
+        #expect(PrivateDeletionPolicy.resolvedCreator("_other", currentUserRecordID: "_me") == "_other")
+        #expect(PrivateDeletionPolicy.resolvedCreator(nil, currentUserRecordID: "_me") == nil)
+    }
+
+    @Test("Deletion record names are deterministic, so a second request collides")
+    func deterministicNames() {
+
+        #expect(RecordID.privateDeletion(report: "r1") == RecordID.privateDeletion(report: "r1"))
+        #expect(RecordID.privateDeletionAll(user: "_u") != RecordID.privateDeletion(report: "_u"))
+    }
+
+    @Test("A pending deletion keeps the counts non-empty")
+    func pendingCounts() {
+
+        #expect(MyDataCounts(privateReports: 2, privateDeletionRequested: true).isEmpty == false)
+    }
+}

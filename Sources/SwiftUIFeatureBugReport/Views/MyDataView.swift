@@ -62,10 +62,17 @@ public struct MyDataView: View {
                         LabeledContent("Reports", value: store.accountData.counts.reports.formatted(.number))
 
                         // Shown whenever there are any, even with private feedback since turned off -
-                        // they are still deleted below.
-                        if store.configuration.privateFeedback != .disabled || store.accountData.counts.privateReports > 0 {
+                        // deletion still covers them below.
+                        if showsPrivateReports {
 
                             LabeledContent("Private reports", value: store.accountData.counts.privateReports.formatted(.number))
+
+                            if store.accountData.counts.privateDeletionRequested {
+
+                                Label("Deletion requested. The developer will delete your private reports.", systemImage: "clock")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
 
@@ -85,7 +92,15 @@ public struct MyDataView: View {
 
                 } footer: {
 
-                    Text("Votes you cast on other people's requests aren't included. A vote carries no text, and removing them would quietly change someone else's total. Withdraw a vote from the request itself.")
+                    VStack(alignment: .leading, spacing: 6) {
+
+                        Text("Votes you cast on other people's requests aren't included. A vote carries no text, and removing them would quietly change someone else's total. Withdraw a vote from the request itself.")
+
+                        if showsPrivateReports {
+
+                            Text("Private reports can only be deleted by the developer. Deleting your data sends them a deletion request, and your private reports stay until they process it.")
+                        }
+                    }
                 }
 
                 if !store.reports.blockedAuthors.isEmpty { blockedSection }
@@ -121,8 +136,20 @@ public struct MyDataView: View {
             // Stated plainly rather than buried, in both directions: what goes, and what stays.
             // Deleting a request really does take other people's votes and replies on it with it, and
             // someone about to do that deserves to know before rather than after.
-            Text("This permanently deletes your requests, replies and reports. Any votes and replies other people left on your requests go with them. Votes you cast on other people's requests stay, so their totals aren't changed. Withdraw those individually if you want them gone. This can't be undone.")
+            if showsPrivateReports {
+
+                Text("This permanently deletes your requests, replies and reports. Any votes and replies other people left on your requests go with them. Votes you cast on other people's requests stay, so their totals aren't changed. Withdraw those individually if you want them gone. Your private reports are sent to the developer for deletion. This can't be undone.")
+            }
+            else {
+
+                Text("This permanently deletes your requests, replies and reports. Any votes and replies other people left on your requests go with them. Votes you cast on other people's requests stay, so their totals aren't changed. Withdraw those individually if you want them gone. This can't be undone.")
+            }
         }
+    }
+
+    private var showsPrivateReports: Bool {
+
+        store.configuration.privateFeedback != .disabled || store.accountData.counts.privateReports > 0
     }
 
     @ViewBuilder private var blockedSection: some View {

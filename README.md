@@ -151,6 +151,8 @@ are saved as `PrivateReport` records that only the submitter and the `dev` role 
 CloudKit. Users find them under "My private reports" in the board's "more" menu, and developers get a
 "Private reports" queue there too. With `.bugsAndAttachments`, bug reports and anything with an image
 are always private. Private submissions can carry images even with `allowImageAttachments: false`.
+Submitters can read but not edit or delete private reports. They ask the developer to delete them,
+and the developer handles those requests in the "Private reports" queue.
 Leave it `.disabled` until `PrivateReport` is deployed. See [Privacy](Docs/Privacy.md#private-feedback).
 
 ### 6. Deploy before release

@@ -67,7 +67,21 @@ DEFINE SCHEMA
         replies           LIST<STRING>,
         status            STRING QUERYABLE,
         title             STRING,
-        GRANT READ, WRITE TO "_creator",
+        GRANT READ TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ, WRITE TO dev
+    );
+
+    RECORD TYPE PrivateReportDeletionRequest (
+        "___createTime" TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"  REFERENCE QUERYABLE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy" REFERENCE QUERYABLE,
+        "___recordID"   REFERENCE QUERYABLE,
+        reportNames     LIST<STRING>,
+        scope           STRING QUERYABLE,
+        GRANT READ TO "_creator",
         GRANT CREATE TO "_icloud",
         GRANT READ, WRITE TO dev
     );

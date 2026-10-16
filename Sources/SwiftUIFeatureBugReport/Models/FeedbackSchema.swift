@@ -20,6 +20,9 @@ enum RecordType {
 
     /// Readable only by its creator and the `dev` role - no `_world` grant. See `PrivateReport`.
     static let privateReport = "PrivateReport"
+
+    /// A submitter's request that the developer delete private reports they cannot delete themselves.
+    static let privateReportDeletionRequest = "PrivateReportDeletionRequest"
 }
 
 
@@ -59,6 +62,10 @@ enum FieldKey {
     // PrivateReport (also reuses title, body, kind, status, images, creatorID, device fields, payload)
     static let replies = "replies"
 
+    // PrivateReportDeletionRequest
+    static let reportNames = "reportNames"
+    static let scope = "scope"
+
     /// CloudKit's own creation timestamp, as addressed from an `NSSortDescriptor`. The matching
     /// Dashboard index is listed as `createdTimestamp` on the record type - the two names refer to the
     /// same system field.
@@ -80,6 +87,12 @@ enum RecordID {
     static func follow(request: String, user: String) -> String { validated("follow_\(request)_\(user)") }
 
     static func metadata(request: String) -> String { validated("meta_\(request)") }
+
+    /// One pending request per report, so asking twice collides instead of queueing duplicates.
+    static func privateDeletion(report: String) -> String { validated("privdel_\(report)") }
+
+    /// One pending "delete all my private reports" request per user.
+    static func privateDeletionAll(user: String) -> String { validated("privdel_all_\(user)") }
 
     /// Makes a broadcast repeatable. Announcing the same thing twice - a double-tapped "Notify
     /// everyone following" - collides server-side instead of sending everyone a second push.

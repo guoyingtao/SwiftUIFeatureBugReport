@@ -31,6 +31,10 @@ public enum FeedbackError: LocalizedError, Sendable {
 
     case imageEncodingFailed
 
+    /// A developer-only action was attempted by someone who is not listed as a developer. A client-side
+    /// check only - the `dev` security role is what CloudKit actually enforces.
+    case developerOnly
+
     case underlying(String)
 
     public var errorDescription: String? {
@@ -63,6 +67,9 @@ public enum FeedbackError: LocalizedError, Sendable {
 
         case .imageEncodingFailed:
             return String(localized: "That image could not be prepared for upload.")
+
+        case .developerOnly:
+            return String(localized: "Only the developer can do that.")
 
         case .underlying(let message):
             return message

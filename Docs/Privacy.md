@@ -38,12 +38,16 @@ With `privateFeedback` set to `.optional` or `.bugsAndAttachments`, a submission
 alone. It is saved as a `PrivateReport` instead of a `Request`. The record type grants:
 
 ```
-GRANT READ, WRITE TO "_creator",
+GRANT READ TO "_creator",
 GRANT CREATE TO "_icloud",
 GRANT READ, WRITE TO dev
 ```
 
-There is no `_world` grant, so CloudKit itself refuses to return the record to anyone else. This is
+There is no `_world` grant, so CloudKit itself refuses to return the record to anyone else. The creator
+can read their report but **not write it**: with WRITE they could edit the `replies` and `status` fields
+directly through CloudKit and make their own text appear as a developer reply. The package also refuses
+`reply` and `setStatus` for non-developers, but that client-side check is a convenience, not
+authentication. The schema is what enforces it. This is
 different from `ModerationState.hidden` and `ImageState.pending`, which only control what the package
 shows: those records, and their image assets, stay fetchable by any client that queries them. Use
 private feedback, not moderation, for anything that must not be public, such as screenshots.
@@ -57,7 +61,31 @@ Private reports carry the same device fields as requests, plus optional `Feedbac
 and up to three images processed like public ones: downscaled, re-encoded and stripped of EXIF. They
 are never shown on the board, never voted on, and never generate `Activity` records.
 
-Delete-my-data removes the user's private reports as well when private feedback is enabled.
+### Deleting private reports
+
+Because the creator has no WRITE, a submitter cannot delete their own private report either. They ask
+the developer instead, by creating a `PrivateReportDeletionRequest` (same grants: `_creator` READ,
+`_icloud` CREATE, `dev` READ, WRITE, no `_world`):
+
+- **One report:** "Ask the developer to delete this" on the report's detail screen.
+- **All of them:** "Delete my data" in `MyDataView` deletes the public data immediately, as before, and
+  files one request covering every private report. The screen then shows "Deletion requested".
+
+Reports covered by a pending request are marked in "My private reports". The developer sees pending
+requests at the top of the "Private reports" queue and deletes the reports and the request with one
+button. Only reports **created by the requesting account** are deleted, checked against each record's
+CloudKit creator. A request that names someone else's report deletes nothing.
+
+A developer using `AccountDataService.delete(creatorID:)` (for example for a request that arrived by
+email) deletes that user's private reports and deletion requests directly.
+
+**Process requests promptly.** App Store Review Guideline 5.1.1(v) requires apps that support account
+creation to let people delete their data from within the app, and privacy laws such as the GDPR set
+deadlines for erasure requests. Here the request is made in the app but the deletion happens when you
+act on it, so check the queue regularly. A good habit is a calendar reminder, or a developer
+notification subscription on `PrivateReportDeletionRequest`. The package does not create that
+subscription for you. Say in your privacy policy that private reports are deleted on request and how
+long that takes. This is guidance, not legal advice.
 
 The developer is still identified by the `dev` security role, so anyone with that role in the
 container can read every private report. Grant it only to people who should.

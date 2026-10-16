@@ -25,6 +25,10 @@ public struct PrivateReportsView: View {
 
     @State private var store: FeedbackStore
 
+    /// The deletion request the confirmation dialog is asking about.
+    @State private var pendingProcess: PrivateDeletionRequest?
+    @State private var processing: Set<CKRecord.ID> = []
+
     private let scope: PrivateReportScope
     private let embedsNavigationStack: Bool
 
@@ -71,6 +75,11 @@ public struct PrivateReportsView: View {
 
         List {
 
+            if scope == .all && store.container.isDeveloper && !store.privateReports.pendingDeletionRequests.isEmpty {
+
+                deletionRequestsSection
+            }
+
             if store.container.identityState == .resolving {
 
                 Section { IdentityResolvingView() }
@@ -109,7 +118,12 @@ public struct PrivateReportsView: View {
 
                         PrivateReportDetailView(store: store, report: report, scope: scope)
 
-                    } label: { PrivateReportRow(report: report, showsCreator: scope == .all) }
+                    } label: {
+
+                        PrivateReportRow(report: report,
+                                         showsCreator: scope == .all,
+                                         isDeletionPending: store.privateReports.isDeletionPending(report))
+                    }
                 }
             }
 
@@ -125,6 +139,89 @@ public struct PrivateReportsView: View {
 
             await store.start()
             await Self.load(store: store, scope: scope)
+        }
+        .confirmationDialog("Delete these private reports?",
+                            isPresented: Binding(get: { pendingProcess != nil },
+                                                 set: { if !$0 { pendingProcess = nil } }),
+                            titleVisibility: .visible,
+                            presenting: pendingProcess) { request in
+
+            Button("Delete", role: .destructive) { process(request) }
+
+            Button("Cancel", role: .cancel) { pendingProcess = nil }
+
+        } message: { request in
+
+            switch request.scope {
+
+            case .all: Text("Every private report this person has sent is deleted, with its images and replies. This can't be undone.")
+            case .reports: Text("The requested reports are deleted, with their images and replies. This can't be undone.")
+            }
+        }
+    }
+
+    /// Developer only. Users who cannot delete their own private reports ask here instead.
+    @ViewBuilder private var deletionRequestsSection: some View {
+
+        Section {
+
+            ForEach(store.privateReports.pendingDeletionRequests) { request in
+
+                HStack(alignment: .firstTextBaseline) {
+
+                    VStack(alignment: .leading, spacing: 3) {
+
+                        switch request.scope {
+
+                        case .all: Text("All private reports")
+                        case .reports: Text("^[\(request.reportNames.count) report](inflect: true)")
+                        }
+
+                        Text(request.requesterID)
+                            .font(.caption2.monospaced())
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .foregroundStyle(.secondary)
+
+                        Text(request.requestedAt, format: .relative(presentation: .named))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    if processing.contains(request.id) {
+
+                        ProgressView().controlSize(.small)
+                    }
+                    else {
+
+                        Button("Delete", role: .destructive) { pendingProcess = request }
+                    }
+                }
+            }
+
+        } header: { Text("Deletion requests") }
+          footer: { Text("People can't delete their own private reports, so they ask you to. Process these promptly.") }
+    }
+
+    private func process(_ request: PrivateDeletionRequest) {
+
+        pendingProcess = nil
+        processing.insert(request.id)
+
+        Task {
+
+            do {
+
+                try await store.privateReports.process(request)
+            }
+            catch {
+
+                store.privateReports.error = error as? FeedbackError ?? CloudKitErrorHandler.classify(error)
+            }
+
+            processing.remove(request.id)
         }
     }
 
@@ -143,6 +240,7 @@ struct PrivateReportRow: View {
 
     let report: PrivateReport
     let showsCreator: Bool
+    var isDeletionPending = false
 
     var body: some View {
 
@@ -160,6 +258,13 @@ struct PrivateReportRow: View {
                 if !report.replies.isEmpty {
 
                     Label("^[\(report.replies.count) reply](inflect: true)", systemImage: "bubble.left")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if isDeletionPending {
+
+                    Label("Deletion requested", systemImage: "trash")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -192,6 +297,9 @@ struct PrivateReportDetailView: View {
     @State private var replyText = ""
     @State private var isSending = false
     @State private var error: FeedbackError?
+
+    @State private var showingDeletionConfirmation = false
+    @State private var isRequestingDeletion = false
 
     private let scope: PrivateReportScope
 
@@ -264,6 +372,8 @@ struct PrivateReportDetailView: View {
 
             if showsDeveloperControls { developerSections }
 
+            if scope == .mine { deletionSection }
+
             if let error {
 
                 Section { FeedbackErrorBanner(error: error, retry: nil) }
@@ -274,6 +384,68 @@ struct PrivateReportDetailView: View {
         .ownedNavigationTitle(title, ownsStack: false)
         .inlineNavigationTitle()
         .task { report = await store.privateReports.loadDetail(report) }
+    }
+
+    /// Submitters cannot delete a private report - `_creator` has READ only, so that they cannot rewrite
+    /// the developer's replies either - so they ask the developer to.
+    @ViewBuilder private var deletionSection: some View {
+
+        Section {
+
+            if store.privateReports.isDeletionPending(report) {
+
+                Label("Deletion requested. The developer will delete this report.", systemImage: "clock")
+                    .foregroundStyle(.secondary)
+            }
+            else {
+
+                Button(role: .destructive, action: { showingDeletionConfirmation = true }) {
+
+                    HStack {
+
+                        Label("Ask the developer to delete this", systemImage: "trash")
+
+                        if isRequestingDeletion {
+
+                            Spacer()
+
+                            ProgressView().controlSize(.small)
+                        }
+                    }
+                }
+                .disabled(isRequestingDeletion)
+            }
+
+        } footer: { Text("Only the developer can delete private reports. It stays visible to you until they do.") }
+          .confirmationDialog("Ask the developer to delete this report?",
+                              isPresented: $showingDeletionConfirmation,
+                              titleVisibility: .visible) {
+
+              Button("Request deletion", role: .destructive) { requestDeletion() }
+
+              Button("Cancel", role: .cancel) { }
+
+          } message: { Text("The report, its images and replies will be deleted once the developer processes your request.") }
+    }
+
+    private func requestDeletion() {
+
+        isRequestingDeletion = true
+        error = nil
+
+        Task {
+
+            do {
+
+                try await store.privateReports.requestDeletion(of: report)
+            }
+            catch {
+
+                self.error = error as? FeedbackError ?? CloudKitErrorHandler.classify(error)
+            }
+
+            isRequestingDeletion = false
+        }
     }
 
     @ViewBuilder private var developerSections: some View {
