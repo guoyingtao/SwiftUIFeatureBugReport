@@ -19,6 +19,8 @@ private enum BoardDestination: Hashable, Identifiable {
     case updates
     case myData
     case portal
+    case privateReports
+    case privatePortal
 
     var id: Self { self }
 
@@ -30,6 +32,8 @@ private enum BoardDestination: Hashable, Identifiable {
         case .updates: return "Updates"
         case .myData: return "My requests"
         case .portal: return "Developer portal"
+        case .privateReports: return "My private reports"
+        case .privatePortal: return "Private reports"
         }
     }
 }
@@ -181,6 +185,8 @@ public struct FeedbackBoardView: View {
         case .updates: UpdatesView(store: store, embedsNavigationStack: false)
         case .myData: MyDataView(store: store, embedsNavigationStack: false)
         case .portal: DeveloperPortalView(store: store, embedsNavigationStack: false)
+        case .privateReports: PrivateReportsView(store: store, scope: .mine, embedsNavigationStack: false)
+        case .privatePortal: PrivateReportsView(store: store, scope: .all, embedsNavigationStack: false)
         }
     }
     #endif
@@ -495,6 +501,18 @@ public struct FeedbackBoardView: View {
         Button(action: { destination = .myData },
                label: { Label("My requests", systemImage: "person.crop.circle") })
 
+        if offersPrivateFeedback {
+
+            Button(action: { destination = .privateReports },
+                   label: { Label("My private reports", systemImage: "lock") })
+        }
+
+        if store.container.isDeveloper {
+
+            Button(action: { destination = .privatePortal },
+                   label: { Label("Private reports", systemImage: "lock.shield") })
+        }
+
 #else
         NavigationLink { RoadmapView(store: store, embedsNavigationStack: false) }
             label: { Label("Roadmap", systemImage: "map") }
@@ -502,8 +520,23 @@ public struct FeedbackBoardView: View {
         NavigationLink { MyDataView(store: store, embedsNavigationStack: false) }
             label: { Label("My requests", systemImage: "person.crop.circle") }
 
+        if offersPrivateFeedback {
+
+            NavigationLink { PrivateReportsView(store: store, scope: .mine, embedsNavigationStack: false) }
+                label: { Label("My private reports", systemImage: "lock") }
+        }
+
+        if store.container.isDeveloper {
+
+            NavigationLink { PrivateReportsView(store: store, scope: .all, embedsNavigationStack: false) }
+                label: { Label("Private reports", systemImage: "lock.shield") }
+        }
+
 #endif
     }
+
+    /// Shown even to a developer, who may want to see the queue from a submitter's side.
+    private var offersPrivateFeedback: Bool { store.configuration.privateFeedback != .disabled }
 
     /// A dot, not a number.
     ///
