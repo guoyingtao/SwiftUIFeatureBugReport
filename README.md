@@ -155,6 +155,35 @@ Submitters can read but not edit or delete private reports. They ask the develop
 and the developer handles those requests in the "Private reports" queue.
 Leave it `.disabled` until `PrivateReport` is deployed. See [Privacy](Docs/Privacy.md#private-feedback).
 
+### Several apps, one container
+
+Apps from the same team can share one container. Give each its own `appID`:
+
+```swift
+FeedbackConfiguration(
+    containerIdentifier: "iCloud.com.newbee.feedback",   // the same in BeeDay, BeeTunes and BeeReader
+    developerUserRecordIDs: ["_abc123…"],
+    appID: "BeeDay"
+)
+```
+
+With `appID` set, new requests, private reports and activity are stamped with it. The board, roadmap,
+search, Updates and "My private reports" then show only that app's records. The developer portal and the
+"Private reports" queue still show every app, with an app badge on each row and an app filter. `appID: nil`,
+the default, writes nothing and shows everything, exactly as before.
+
+Records written before `appID` was set have none, and nobody can tell which app they came from. By default
+they're hidden from every app that sets `appID`. They still show in the portal, where the filter lists them as
+"No app". Set `includeUnscopedRecords: true` in the app that owned the container first, and its existing
+feedback stays visible there.
+
+`appID` is a display filter, **not a security boundary**. It's an ordinary client-written field and every
+app shares the same record types and permissions, so a user of one app can read the others' public
+feedback through CloudKit directly. If the apps' feedback must be kept apart, give each app its own
+container. See [CloudKit setup](Docs/CloudKit-Setup.md#one-container-or-several).
+
+"My data" (counts and delete-my-data) stays account-wide across apps, because deletion is too.
+
 ### 6. Deploy before release
 
 Test in CloudKit's Development environment first. When ready:

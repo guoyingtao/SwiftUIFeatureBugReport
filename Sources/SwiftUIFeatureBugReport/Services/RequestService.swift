@@ -39,6 +39,8 @@ import Observation
         hasLoadedOnce = false
     }
 
+    private var scope: AppScope { container.configuration.appScope }
+
     // MARK: - Reading
 
     public func loadBoard() async {
@@ -56,9 +58,12 @@ import Observation
         // `!=` rather than `IN {visible, approved}` so a moderation state added by a future version
         // still shows up. Records where `moderation` was never written match neither form, which is
         // exactly why the persistence layer always writes it.
+        //
+        // Developers also read every app in a shared container, because the portal filters by app. The
+        // board itself narrows to this app on the client - see `FeedbackStore.boardRequests`.
         let predicate = container.isDeveloper
             ? NSPredicate(value: true)
-            : NSPredicate(format: "%K != %@", FieldKey.moderation, ModerationState.hidden.rawValue)
+            : scope.predicate(NSPredicate(format: "%K != %@", FieldKey.moderation, ModerationState.hidden.rawValue))
 
         let query = CKQuery(recordType: RecordType.request, predicate: predicate)
         query.sortDescriptors = [NSSortDescriptor(key: FieldKey.lastActivityAt, ascending: false)]
@@ -164,7 +169,7 @@ import Observation
         // Do not mark `body` searchable without revisiting this: CloudKit returns matches in no
         // particular order and has no relevance scoring, so widening the match set does not surface
         // better results, it just makes which five you get arbitrary.
-        let predicate = NSPredicate(format: "self CONTAINS %@", trimmed)
+        let predicate = scope.predicate(NSPredicate(format: "self CONTAINS %@", trimmed))
 
         let query = CKQuery(recordType: RecordType.request, predicate: predicate)
 
@@ -176,7 +181,7 @@ import Observation
 
             return page.matchResults.compactMap { try? $0.1.get() }
                 .compactMap { FeedbackRequest(record: $0) }
-                .filter { $0.moderation != .hidden }
+                .filter { $0.moderation != .hidden && scope.includes($0.appID) }
         }
         catch {
 
@@ -217,6 +222,9 @@ import Observation
         seeded[FieldKey.resolvedInVersion] = ""
         seeded[FieldKey.creatorID] = creatorID
         seeded[FieldKey.lastActivityAt] = Date.now
+
+        // Absent rather than empty when no app is configured, so the record reads as unscoped.
+        if let appID = scope.appID { seeded[FieldKey.appID] = appID }
 
         let environment = DeviceInfo.current()
 

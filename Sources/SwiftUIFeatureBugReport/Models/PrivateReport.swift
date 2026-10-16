@@ -24,6 +24,9 @@ public struct PrivateReport: Identifiable, Sendable, Hashable {
     public var kind: FeedbackType
     public var status: RequestStatus
     public let creatorID: String
+
+    /// The app the report was sent from, or `nil` for an unscoped one - see `AppScope`.
+    public let appID: String?
     public let environment: DeviceEnvironment
     public var replies: [PrivateReply]
     public var lastActivityAt: Date
@@ -64,6 +67,7 @@ public struct PrivateReport: Identifiable, Sendable, Hashable {
         // so it could name someone else and impersonate them in the developer queue.
         self.creatorID = PrivateDeletionPolicy.resolvedCreator(record.creatorUserRecordID?.recordName,
                                                                currentUserRecordID: currentUserRecordID) ?? ""
+        self.appID = AppScope.normalized(record[FieldKey.appID] as? String)
         self.replies = trustsDeveloperFields ? PrivateReply.decode(record[FieldKey.replies] as? [String] ?? []) : []
         self.lastActivityAt = record[FieldKey.lastActivityAt] as? Date ?? record.creationDate ?? .now
         self.createdAt = record.creationDate ?? .now
@@ -95,7 +99,7 @@ public struct PrivateReport: Identifiable, Sendable, Hashable {
             FieldKey.title, FieldKey.body, FieldKey.kind, FieldKey.status, FieldKey.creatorID,
             FieldKey.replies, FieldKey.lastActivityAt, FieldKey.payload,
             FieldKey.appVersion, FieldKey.buildNumber, FieldKey.osVersion,
-            FieldKey.deviceModel, FieldKey.platform
+            FieldKey.deviceModel, FieldKey.platform, FieldKey.appID
         ]
     }
 }

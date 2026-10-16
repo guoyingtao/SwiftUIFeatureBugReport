@@ -28,6 +28,7 @@ public struct PrivateReportsView: View {
     /// The deletion request the confirmation dialog is asking about.
     @State private var pendingProcess: PrivateDeletionRequest?
     @State private var processing: Set<CKRecord.ID> = []
+    @State private var appFilter: AppFilter = .all
 
     private let scope: PrivateReportScope
     private let embedsNavigationStack: Bool
@@ -66,7 +67,9 @@ public struct PrivateReportsView: View {
 
     private var reports: [PrivateReport] {
 
-        scope == .all ? store.privateReports.allReports : store.privateReports.myReports
+        scope == .all
+            ? store.privateReports.allReports.filter { appFilter.matches($0.appID) }
+            : store.privateReports.myReports
     }
 
     private var title: LocalizedStringKey { scope == .all ? "Private reports" : "My private reports" }
@@ -78,6 +81,11 @@ public struct PrivateReportsView: View {
             if scope == .all && store.container.isDeveloper && !store.privateReports.pendingDeletionRequests.isEmpty {
 
                 deletionRequestsSection
+            }
+
+            if scope == .all && store.container.isDeveloper {
+
+                AppFilterPicker(selection: $appFilter, appIDs: store.privateReports.allReports.map(\.appID))
             }
 
             if store.container.identityState == .resolving {
@@ -122,6 +130,7 @@ public struct PrivateReportsView: View {
 
                         PrivateReportRow(report: report,
                                          showsCreator: scope == .all,
+                                         showsApp: scope == .all,
                                          isDeletionPending: store.privateReports.isDeletionPending(report))
                     }
                 }
@@ -240,6 +249,7 @@ struct PrivateReportRow: View {
 
     let report: PrivateReport
     let showsCreator: Bool
+    var showsApp = false
     var isDeletionPending = false
 
     var body: some View {
@@ -251,6 +261,8 @@ struct PrivateReportRow: View {
                 .lineLimit(2)
 
             HStack(spacing: 6) {
+
+                if showsApp { AppBadge(appID: report.appID) }
 
                 TypeBadge(type: report.kind)
                 StatusBadge(status: report.status)

@@ -49,6 +49,10 @@ enum FieldKey {
     static let buildNumber = "buildNumber"
     static let lastActivityAt = "lastActivityAt"
 
+    /// Which app wrote a `Request`, `PrivateReport` or `Activity` - see `AppScope`. Absent on records
+    /// written before app scoping, or by an app with no `appID` configured.
+    static let appID = "appID"
+
     // Vote / Report / Comment / Activity / RequestMetadata
     static let request = "request"
     static let category = "category"

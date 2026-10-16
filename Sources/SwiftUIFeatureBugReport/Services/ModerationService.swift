@@ -324,6 +324,9 @@ import Observation
         record[FieldKey.requestTitle] = request.title
         record[FieldKey.message] = message
 
+        // The request's app, not this one: the developer may be moderating another app from the portal.
+        if let appID = request.appID { record[FieldKey.appID] = appID }
+
         return record
     }
 

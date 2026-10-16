@@ -52,12 +52,34 @@ public struct FeedbackConfiguration: Sendable {
     /// deployed before this option existed will not have. Deploy the schema first, then turn it on.
     public let privateFeedback: PrivateFeedbackMode
 
+    /// Identifies this app when several apps share one container, e.g. `"BeeDay"`.
+    ///
+    /// When set, new requests, private reports and activity are stamped with it, and the board, the
+    /// roadmap, search, Updates and "My private reports" show only this app's records. The developer
+    /// portal still shows every app, with a filter. `nil`, the default, writes nothing and shows
+    /// everything - the behaviour before this option existed.
+    ///
+    /// **A display filter, not a security boundary** - see `AppScope`. Use separate containers if the
+    /// apps' data must be kept apart.
+    public let appID: String?
+
+    /// Whether records with no `appID` - written before scoping was turned on - still show when
+    /// `appID` is set. Defaults to `false`: in a shared container nobody can tell which app an
+    /// unscoped record came from. Turn it on for the one app that owned the container before the others
+    /// joined it, so its existing feedback stays visible.
+    public let includeUnscopedRecords: Bool
+
+    /// The scope derived from `appID` and `includeUnscopedRecords`.
+    public var appScope: AppScope { AppScope(appID: appID, includesUnscopedRecords: includeUnscopedRecords) }
+
     public init(containerIdentifier: String,
                 developerUserRecordIDs: [String] = [],
                 reportThreshold: Int = 3,
                 allowComments: Bool = true,
                 allowImageAttachments: Bool = true,
-                privateFeedback: PrivateFeedbackMode = .disabled) {
+                privateFeedback: PrivateFeedbackMode = .disabled,
+                appID: String? = nil,
+                includeUnscopedRecords: Bool = false) {
 
         self.containerIdentifier = containerIdentifier
         self.developerUserRecordIDs = developerUserRecordIDs
@@ -65,6 +87,8 @@ public struct FeedbackConfiguration: Sendable {
         self.allowComments = allowComments
         self.allowImageAttachments = allowImageAttachments
         self.privateFeedback = privateFeedback
+        self.appID = AppScope.normalized(appID)
+        self.includeUnscopedRecords = includeUnscopedRecords
     }
 
 }

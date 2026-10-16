@@ -56,6 +56,23 @@ struct SchemaVariantTests {
         return contents[start.upperBound..<end.lowerBound]
     }
 
+    /// App-scoped queries filter on `appID`; without the index CloudKit rejects them outright.
+    @Test("appID is queryable on every app-scoped type, in both variants")
+    func appIDIndexes() throws {
+
+        for name in ["Schema.ckdb", "Schema-NoComments.ckdb"] {
+
+            let contents = try schema(named: name)
+
+            for recordType in ["Request", "PrivateReport", "Activity"] {
+
+                let block = try grants(of: recordType, in: contents)
+
+                #expect(block.range(of: #"appID\s+STRING QUERYABLE"#, options: .regularExpression) != nil, "\(recordType) in \(name)")
+            }
+        }
+    }
+
     /// The whole point of `PrivateReport`: CloudKit itself refuses other users, and the submitter can
     /// read but not write - otherwise they could forge developer replies or status. A `_world` grant or
     /// a creator WRITE slipping into either schema would break that.

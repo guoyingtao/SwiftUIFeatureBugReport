@@ -203,3 +203,61 @@ struct ModerationBanner: View {
         }
     }
 }
+
+
+/// Which app a record came from, in a container shared by several apps. Shown in the developer's
+/// views only - users only ever see their own app's records.
+struct AppBadge: View {
+
+    let appID: String?
+
+    var body: some View {
+
+        if let appID {
+
+            Text(verbatim: appID)
+                .font(.caption2)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(.quaternary, in: Capsule())
+                .accessibilityLabel(Text("App: \(appID)"))
+        }
+    }
+}
+
+
+/// The developer's app filter. Hidden unless the loaded records span more than one app, so a single-app
+/// container never sees it.
+struct AppFilterPicker: View {
+
+    @Binding var selection: AppFilter
+
+    let appIDs: [String?]
+
+    var body: some View {
+
+        let choices = AppFilter.choices(for: appIDs)
+
+        if choices.count > 2 || selection != .all {
+
+            Picker("App", selection: $selection) {
+
+                ForEach(choices, id: \.self) { choice in
+
+                    switch choice {
+
+                    case .all: Text("All apps").tag(choice)
+                    case .app(let appID): Text(verbatim: appID).tag(choice)
+                    case .unscoped: Text("No app").tag(choice)
+                    }
+                }
+            }
+            .labelsHidden()
+            .accessibilityLabel(Text("Filter by app"))
+            .help("Filter by app")
+#if os(macOS)
+            .fixedSize()
+#endif
+        }
+    }
+}

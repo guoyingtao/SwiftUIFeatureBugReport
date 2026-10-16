@@ -78,7 +78,8 @@ import UserNotifications
 
         defer { isLoading = false }
 
-        let predicate = NSPredicate(format: "%K == %@", FieldKey.recipientID, me)
+        let scope = container.configuration.appScope
+        let predicate = scope.predicate(NSPredicate(format: "%K == %@", FieldKey.recipientID, me))
         let query = CKQuery(recordType: RecordType.activity, predicate: predicate)
 
         query.sortDescriptors = [NSSortDescriptor(key: FieldKey.creationDate, ascending: false)]
@@ -90,6 +91,7 @@ import UserNotifications
             activity = page.matchResults
                 .compactMap { try? $0.1.get() }
                 .compactMap { FeedbackActivity(record: $0) }
+                .filter { scope.includes($0.appID) }
         }
         catch {
 
@@ -176,15 +178,19 @@ import UserNotifications
 
         guard let me = container.currentUserRecordID else { return }
 
+        let scope = container.configuration.appScope
+
         for kind in ActivityKind.allCases {
 
-            let predicate = NSPredicate(format: "%K == %@ AND %K == %@",
-                                        FieldKey.recipientID, me,
-                                        FieldKey.kind, kind.rawValue)
+            // With unscoped records included the subscription cannot narrow - CloudKit cannot match a
+            // missing field - so pushes about other apps' requests may still arrive. See `AppScope`.
+            let predicate = scope.predicate(NSPredicate(format: "%K == %@ AND %K == %@",
+                                                        FieldKey.recipientID, me,
+                                                        FieldKey.kind, kind.rawValue))
 
             let subscription = CKQuerySubscription(recordType: RecordType.activity,
                                                    predicate: predicate,
-                                                   subscriptionID: "activity-\(kind.rawValue)-\(me)",
+                                                   subscriptionID: "activity-\(kind.rawValue)-\(me)\(scope.subscriptionSuffix())",
                                                    options: [.firesOnRecordCreation])
 
             let info = CKSubscription.NotificationInfo()

@@ -211,7 +211,7 @@ import Observation
     /// The board is the one place that relaxes it - see `boardRequests`.
     public var visibleRequests: [FeedbackRequest] {
 
-        requests.requests.filter { isVisible($0) }
+        requests.requests.filter { container.configuration.appScope.includes($0.appID) && isVisible($0) }
     }
 
     /// What the board shows. Identical to `visibleRequests` for a user.
@@ -223,7 +223,8 @@ import Observation
 
         guard container.isDeveloper else { return visibleRequests }
 
-        return requests.requests.filter { !reports.isBlocked($0.creatorID) }
+        // The developer's board is still this app's board; the portal is where every app shows.
+        return requests.requests.filter { container.configuration.appScope.includes($0.appID) && !reports.isBlocked($0.creatorID) }
     }
 
     /// What the board's own list shows: `boardRequests` without the work that has already shipped.

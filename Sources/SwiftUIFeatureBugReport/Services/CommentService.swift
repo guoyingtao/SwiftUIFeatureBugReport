@@ -199,6 +199,8 @@ import Observation
         record[FieldKey.requestTitle] = request.title
         record[FieldKey.message] = String(localized: "The developer replied to your request")
 
+        if let appID = request.appID { record[FieldKey.appID] = appID }
+
         do {
 
             _ = try await database.save(record)

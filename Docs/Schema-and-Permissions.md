@@ -32,20 +32,25 @@ Every included custom record type needs a queryable `___recordID`.
 
 | Record type | Additional indexes |
 |---|---|
-| `Request` | `title` queryable/searchable; `type`, `status`, `moderation`, `imageState`, `labels`, `resolvedInVersion`, `creatorID`, device fields queryable; `lastActivityAt` and creation time sortable |
+| `Request` | `title` queryable/searchable; `appID`, `type`, `status`, `moderation`, `imageState`, `labels`, `resolvedInVersion`, `creatorID`, device fields queryable; `lastActivityAt` and creation time sortable |
 | `Vote` | `request` queryable; creation time sortable |
 | `Report` | `request` and `category` queryable |
 | `Follow` | `request` queryable; creation time sortable |
 | `Comment`, `DevComment` | `request`, `requestCreator`, `creatorID` queryable |
-| `Activity` | `request`, `recipientID`, `kind` queryable; creation time sortable |
+| `Activity` | `appID`, `request`, `recipientID`, `kind` queryable; creation time sortable |
 | `RequestMetadata` | `request` queryable |
-| `PrivateReport` | creator (`___createdBy`), `kind`, `status` queryable; `lastActivityAt` and creation time sortable |
+| `PrivateReport` | creator (`___createdBy`), `appID`, `kind`, `status` queryable; `lastActivityAt` and creation time sortable |
 | `PrivateReportDeletionRequest` | creator (`___createdBy`), `scope` queryable; creation time sortable |
 | `Users` | `___recordID` queryable |
 
 `title` is intentionally the only searchable `Request` field. Search-before-submit uses
 `self CONTAINS`; marking `body` searchable silently widens that query without adding relevance
 ranking.
+
+`appID` scopes records to one app in a shared container (see `FeedbackConfiguration.appID`). It's
+written only when an app sets `appID`; records without it are "unscoped". It's a display filter, not a
+security boundary: it carries no grant of its own, and a request's creator can rewrite it like any
+other field of their request.
 
 ## Permission invariants
 

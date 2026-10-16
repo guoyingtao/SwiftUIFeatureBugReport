@@ -118,6 +118,31 @@ Verify the privacy before deploying, with two Apple Accounts on two devices or s
 Then deploy the schema to Production (**Deploy Schema Changes**) and repeat steps 1, 2 and 5 against
 Production before release.
 
+## One container or several
+
+**Shared container with `appID`.** Add the same container to every app's iCloud capability and set a
+different `FeedbackConfiguration.appID` in each. CloudKit user record IDs are per container, so one
+`developerUserRecordIDs` list and one set of `dev` role assignments cover every app. Deploy the schema
+once. The `appID` index ships in both `.ckdb` files. If your container predates it, re-import the schema
+in Development, or add `appID` (String, Queryable) to `Request`, `PrivateReport` and `Activity` in
+CloudKit Console. Then deploy to Production. **Deploy before shipping a build that sets `appID`**: a
+scoped query against a field with no index fails.
+
+Existing records have no `appID`. Either leave them hidden (they still show in the portal under
+"No app"), set `includeUnscopedRecords: true` in the app they belong to, or backfill the field in
+CloudKit Console. Activity subscriptions saved by builds without `appID` keep their old, unscoped
+predicate until the user deletes the app. That means pushes about other apps' requests can still
+arrive for a while.
+
+Treat `appID` as a display filter, not a security boundary. Every app in the container shares the
+same records and permissions.
+
+**Separate containers.** Each app gets its own container and its own `containerIdentifier`, and nothing
+is shared at all. One Xcode app can use several containers: list them all in that target's iCloud
+capability and create one `FeedbackStore` per container, for example in an internal triage app that
+shows `DeveloperPortalView(store:)` for each. User record IDs differ between containers, so collect
+the developer's ID and assign the `dev` role in every container.
+
 ## Production checklist
 
 - [ ] The schema is deployed to Production.

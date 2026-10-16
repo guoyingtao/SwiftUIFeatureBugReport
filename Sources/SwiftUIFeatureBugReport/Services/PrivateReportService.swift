@@ -76,10 +76,11 @@ import Observation
         // By CloudKit's own creator reference: the `creatorID` field is written by the client and proves
         // nothing.
         let reference = CKRecord.Reference(recordID: CKRecord.ID(recordName: me), action: .none)
-        let predicate = NSPredicate(format: "creatorUserRecordID == %@", reference)
+        let scope = container.configuration.appScope
+        let predicate = scope.predicate(NSPredicate(format: "creatorUserRecordID == %@", reference))
         let started = generation
 
-        if let loaded = await loadAll(matching: predicate), started == generation { myReports = loaded }
+        if let loaded = await loadAll(matching: predicate), started == generation { myReports = loaded.filter { scope.includes($0.appID) } }
 
         await loadMyDeletionRequests()
     }
@@ -319,6 +320,8 @@ import Observation
         seeded[FieldKey.replies] = [String]()
         seeded[FieldKey.payload] = encodedMetadata
         seeded[FieldKey.lastActivityAt] = Date.now
+
+        if let appID = container.configuration.appScope.appID { seeded[FieldKey.appID] = appID }
 
         let environment = DeviceInfo.current()
 

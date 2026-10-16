@@ -47,6 +47,7 @@ public struct DeveloperPortalView: View {
 
     @State private var queue: PortalQueue = .open
     @State private var versionFilter: String?
+    @State private var appFilter: AppFilter = .all
     // Selected by ID, not by value: the struct is replaced wholesale on every reload,
     // so a value-based selection would silently drop each time the board refreshes.
     @State private var selection: CKRecord.ID?
@@ -181,6 +182,8 @@ public struct DeveloperPortalView: View {
 
                     Spacer(minLength: 8)
 
+                    AppFilterPicker(selection: $appFilter, appIDs: store.requests.requests.map(\.appID))
+
                     versionMenu
 
                     Button(action: { Task { await store.load() } }) {
@@ -204,6 +207,11 @@ public struct DeveloperPortalView: View {
             .searchable(text: $searchText, prompt: Text("Search"))
             .feedbackRefreshable { await store.load() }
             .toolbar {
+
+                ToolbarItem(placement: toolbarTrailingPlacement) {
+
+                    AppFilterPicker(selection: $appFilter, appIDs: store.requests.requests.map(\.appID))
+                }
 
                 if !availableVersions.isEmpty {
 
@@ -310,6 +318,8 @@ public struct DeveloperPortalView: View {
                     .lineLimit(2)
 
                 Spacer(minLength: 8)
+
+                AppBadge(appID: request.appID)
 
                 TypeBadge(type: request.type)
             }
@@ -421,6 +431,9 @@ public struct DeveloperPortalView: View {
         store.requests.requests
             .filter { request in
 
+                // Every app in a shared container, so a developer can triage them all from one build.
+                guard appFilter.matches(request.appID) else { return false }
+
                 guard versionFilter == nil || request.environment.appVersion == versionFilter else { return false }
 
                 // Client-side over the already-loaded board - no extra query, and it can match the
@@ -448,7 +461,8 @@ public struct DeveloperPortalView: View {
 
     private var availableVersions: [String] {
 
-        Array(Set(store.requests.requests.map(\.environment.appVersion)))
+        // Versions of the selected app only: BeeDay 2.1 and BeeTunes 2.1 are unrelated builds.
+        Array(Set(store.requests.requests.filter { appFilter.matches($0.appID) }.map(\.environment.appVersion)))
             .filter { !$0.isEmpty }
             .sorted(by: >)
     }

@@ -29,6 +29,9 @@ public struct FeedbackRequest: Identifiable, Sendable, Hashable {
     /// reported from.
     public var resolvedInVersion: String
     public let creatorID: String
+
+    /// The app that wrote this request, or `nil` for an unscoped one - see `AppScope`.
+    public let appID: String?
     public let environment: DeviceEnvironment
     public var lastActivityAt: Date
     public let createdAt: Date
@@ -54,6 +57,7 @@ public struct FeedbackRequest: Identifiable, Sendable, Hashable {
         self.labels = record[FieldKey.labels] as? [String] ?? []
         self.resolvedInVersion = record[FieldKey.resolvedInVersion] as? String ?? ""
         self.creatorID = record[FieldKey.creatorID] as? String ?? ""
+        self.appID = AppScope.normalized(record[FieldKey.appID] as? String)
         self.lastActivityAt = record[FieldKey.lastActivityAt] as? Date ?? record.creationDate ?? .now
         self.createdAt = record.creationDate ?? .now
 
@@ -79,6 +83,10 @@ public struct FeedbackRequest: Identifiable, Sendable, Hashable {
         record[FieldKey.labels] = labels
         record[FieldKey.resolvedInVersion] = resolvedInVersion
         record[FieldKey.creatorID] = creatorID
+
+        // Only ever set, never cleared: writing `nil` back would drop the record out of its app.
+        if let appID { record[FieldKey.appID] = appID }
+
         record[FieldKey.appVersion] = environment.appVersion
         record[FieldKey.buildNumber] = environment.buildNumber
         record[FieldKey.osVersion] = environment.osVersion
@@ -95,14 +103,14 @@ public struct FeedbackRequest: Identifiable, Sendable, Hashable {
             FieldKey.moderation, FieldKey.imageState, FieldKey.labels, FieldKey.creatorID,
             FieldKey.resolvedInVersion,
             FieldKey.appVersion, FieldKey.buildNumber, FieldKey.osVersion,
-            FieldKey.deviceModel, FieldKey.platform, FieldKey.lastActivityAt
+            FieldKey.deviceModel, FieldKey.platform, FieldKey.lastActivityAt, FieldKey.appID
         ]
     }
 
     /// Search results only need enough to render a row and vote from it (§6.2).
     static var searchDesiredKeys: [String] {
 
-        [FieldKey.title, FieldKey.status, FieldKey.type, FieldKey.moderation, FieldKey.resolvedInVersion]
+        [FieldKey.title, FieldKey.status, FieldKey.type, FieldKey.moderation, FieldKey.resolvedInVersion, FieldKey.appID]
     }
 
     // `Equatable` and `Hashable` are both synthesised, deliberately.
