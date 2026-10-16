@@ -51,23 +51,47 @@ import Observation
         let reference = CKRecord.Reference(recordID: requestID, action: .none)
         let predicate = NSPredicate(format: "%K == %@", FieldKey.request, reference)
 
-        do {
+        let query = CKQuery(recordType: recordType, predicate: predicate)
 
-            let page = try await database.records(matching: CKQuery(recordType: recordType, predicate: predicate))
+        var fetched: [FeedbackComment] = []
+        var cursor: CKQueryOperation.Cursor?
 
-            return page.matchResults
-                .compactMap { try? $0.1.get() }
-                .compactMap { FeedbackComment(record: $0) }
-        }
-        catch {
+        // Paged like `VoteService.loadTallies()`: a single page dropped replies on busy requests.
+        repeat {
 
-            if !CloudKitErrorHandler.isRecordMissing(error) {
+            do {
 
-                self.error = CloudKitErrorHandler.classify(error)
+                let page: (matchResults: [(CKRecord.ID, Result<CKRecord, any Error>)], queryCursor: CKQueryOperation.Cursor?)
+
+                if let cursor {
+
+                    page = try await database.records(continuingMatchFrom: cursor)
+                }
+                else {
+
+                    page = try await database.records(matching: query)
+                }
+
+                fetched += page.matchResults
+                    .compactMap { try? $0.1.get() }
+                    .compactMap { FeedbackComment(record: $0) }
+
+                cursor = page.queryCursor
             }
+            catch {
 
-            return []
+                if !CloudKitErrorHandler.isRecordMissing(error) {
+
+                    self.error = CloudKitErrorHandler.classify(error)
+                }
+
+                // Keep the pages already fetched.
+                break
+            }
         }
+        while cursor != nil
+
+        return fetched
     }
 
     /// Whether this user may comment on `request`.
