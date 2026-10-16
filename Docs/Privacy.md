@@ -20,7 +20,7 @@ package author receives no data and cannot access the container.
 ## Visibility
 
 Every `Request` field is public to users of the app, including its device and app-version fields.
-`RequestMetadata` is readable only by the creator and developer role.
+`RequestMetadata` and `PrivateReport` are readable only by the creator and developer role.
 
 CloudKit record creator IDs are pseudonymous, not anonymous. Requests, votes, replies and reports can
 be correlated through that ID even though the package collects no name or email.
@@ -31,6 +31,36 @@ readable only by their creator and the developer role.
 
 `Activity` is world-readable because its recipient is not its creator. Activity messages concern
 public requests and contain no private metadata.
+
+## Private feedback
+
+With `privateFeedback` set to `.optional` or `.bugsAndAttachments`, a submission can go to the developer
+alone. It is saved as a `PrivateReport` instead of a `Request`. The record type grants:
+
+```
+GRANT READ, WRITE TO "_creator",
+GRANT CREATE TO "_icloud",
+GRANT READ, WRITE TO dev
+```
+
+There is no `_world` grant, so CloudKit itself refuses to return the record to anyone else. This is
+different from `ModerationState.hidden` and `ImageState.pending`, which only control what the package
+shows: those records, and their image assets, stay fetchable by any client that queries them. Use
+private feedback, not moderation, for anything that must not be public, such as screenshots.
+
+Developer replies are stored on the report itself, in its `replies` list, rather than in a separate
+record type. A reply record would be created by the developer, and `_creator: READ` would then let only
+the developer read it. Keeping replies on the submitter's own record is what lets both sides read them
+without a `_world` grant.
+
+Private reports carry the same device fields as requests, plus optional `FeedbackPrefill` metadata,
+and up to three images processed like public ones: downscaled, re-encoded and stripped of EXIF. They
+are never shown on the board, never voted on, and never generate `Activity` records.
+
+Delete-my-data removes the user's private reports as well when private feedback is enabled.
+
+The developer is still identified by the `dev` security role, so anyone with that role in the
+container can read every private report. Grant it only to people who should.
 
 ## Deletion
 

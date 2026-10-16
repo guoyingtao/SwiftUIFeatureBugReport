@@ -139,11 +139,19 @@ FeedbackConfiguration(
     developerUserRecordIDs: ["_abc123…"],
     reportThreshold: 3,
     allowComments: true,          // use Schema.ckdb
-    allowImageAttachments: true
+    allowImageAttachments: true,
+    privateFeedback: .disabled    // .optional or .bugsAndAttachments once PrivateReport is deployed
 )
 ```
 
 Set `allowComments: false` when using `Schema-NoComments.ckdb`.
+
+`privateFeedback` adds a "Private (only visible to developer)" toggle to the form. Private submissions
+are saved as `PrivateReport` records that only the submitter and the `dev` role can read, enforced by
+CloudKit. Users find them under "My private reports" in the board's "more" menu, and developers get a
+"Private reports" queue there too. With `.bugsAndAttachments`, bug reports and anything with an image
+are always private. Private submissions can carry images even with `allowImageAttachments: false`.
+Leave it `.disabled` until `PrivateReport` is deployed. See [Privacy](Docs/Privacy.md#private-feedback).
 
 ### 6. Deploy before release
 

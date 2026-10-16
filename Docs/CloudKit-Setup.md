@@ -77,6 +77,37 @@ renamed or retyped, so validate changes in Development first.
 `RoadmapView` groups completed requests by their resolved version. Version sorting is numeric, so
 `2.10` sorts after `2.9`.
 
+## Private feedback
+
+`PrivateReport` ships in both schema files. If your container was set up from an earlier schema:
+
+1. In CloudKit Console, open your container's **Development** environment.
+2. Import the updated `Schema.ckdb` or `Schema-NoComments.ckdb` (**Schema → Import Schema**), or add
+   the `PrivateReport` record type by hand with the fields and indexes listed in
+   [Schema and permissions](Schema-and-Permissions.md).
+3. Open **Schema → Security Roles** and check the `PrivateReport` grants: `_creator` Read and Write,
+   `_icloud` Create, `dev` Read and Write, and nothing for `_world`.
+4. Set `privateFeedback` to `.optional` or `.bugsAndAttachments` in a Development build.
+
+Verify the privacy before deploying, with two Apple Accounts on two devices or simulators:
+
+1. **Account A** (not a developer) submits a private report with an image. It appears under
+   "My private reports" on A.
+2. **Account B** (also not a developer) opens "My private reports": A's report must not appear. Its
+   public board must not show it either.
+3. As B, try to read A's record directly, for example with a temporary debug call to
+   `publicCloudDatabase.record(for:)` using the record name copied from the Console. It must fail with
+   a permission error. Delete the debug call afterwards.
+4. In CloudKit Console's **Records** view, query `PrivateReport` while acting as a user without the
+   `dev` role (**Act as iCloud Account**). Only that account's own reports should be listed.
+5. **The developer account** (in `developerUserRecordIDs`, with the `dev` role) opens "Private reports"
+   from the board's "more" menu: reports from both A and B must be listed. Open one, change its status
+   and send a reply.
+6. Back on **A**, refresh "My private reports": the status and the reply must show.
+
+Then deploy the schema to Production (**Deploy Schema Changes**) and repeat steps 1, 2 and 5 against
+Production before release.
+
 ## Production checklist
 
 - [ ] The schema is deployed to Production.
@@ -87,5 +118,7 @@ renamed or retyped, so validate changes in Development first.
 - [ ] A developer can change status and reply.
 - [ ] Notification permission can be granted and a push is delivered.
 - [ ] Delete-my-data succeeds.
+- [ ] If private feedback is on: another account cannot see a private report, and the developer can
+      list, reply to and update all of them.
 
 See [Schema and permissions](Schema-and-Permissions.md) for the index and grant checklist.

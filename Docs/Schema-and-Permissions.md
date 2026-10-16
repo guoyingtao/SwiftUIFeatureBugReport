@@ -20,6 +20,7 @@ schema itself, work in Development, export the result, review the diff, and upda
 | `Activity` | User update feed and push trigger |
 | `Follow` | Private subscription to a request |
 | `RequestMetadata` | Private prefilling metadata |
+| `PrivateReport` | Developer-only submission, with its developer replies and optional images |
 
 `Users` is CloudKit's built-in user type. Its queryable record ID is needed to configure the
 `dev` role.
@@ -37,6 +38,7 @@ Every included custom record type needs a queryable `___recordID`.
 | `Comment`, `DevComment` | `request`, `requestCreator`, `creatorID` queryable |
 | `Activity` | `request`, `recipientID`, `kind` queryable; creation time sortable |
 | `RequestMetadata` | `request` queryable |
+| `PrivateReport` | `creatorID`, `kind`, `status` queryable; `lastActivityAt` and creation time sortable |
 | `Users` | `___recordID` queryable |
 
 `title` is intentionally the only searchable `Request` field. Search-before-submit uses
@@ -46,6 +48,10 @@ ranking.
 ## Permission invariants
 
 - `RequestMetadata` allows authenticated creation but not world reading.
+- `PrivateReport` has exactly the same grants as `RequestMetadata`: `_creator` READ, WRITE,
+  `_icloud` CREATE, `dev` READ, WRITE, and **no** `_world` grant. Developer replies are stored on the
+  report (`replies`, a `LIST<STRING>` of JSON entries), because a reply record created by the developer
+  would not be readable by the submitter. `SchemaVariantTests` fails if a `_world` grant appears.
 - `DevComment` grants creation only to `dev`, making developer authorship unspoofable.
 - `Comment` and `Follow` grant developer writes so account deletion can remove another user's data.
 - `Vote`, `Report` and `Follow` grant their creator writes so votes can be withdrawn, follows
