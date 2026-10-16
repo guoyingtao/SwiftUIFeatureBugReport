@@ -47,7 +47,14 @@ There is no `_world` grant, so CloudKit itself refuses to return the record to a
 can read their report but **not write it**: with WRITE they could edit the `replies` and `status` fields
 directly through CloudKit and make their own text appear as a developer reply. The package also refuses
 `reply` and `setStatus` for non-developers, but that client-side check is a convenience, not
-authentication. The schema is what enforces it. This is
+authentication. The schema is what enforces it.
+
+`_icloud: CREATE` still lets a creator choose every field's *initial* value, including `replies` and
+`status`. So the package trusts those two fields only when the record's CloudKit last modifier is a
+configured developer (`developerUserRecordIDs`). CloudKit sets that value and clients cannot forge it.
+Until then, a report shows no replies and the status "Open". On the first developer write, any values
+set at creation are discarded before the change is applied. This means `developerUserRecordIDs` must
+list every account that replies, not just the accounts with the `dev` role. This is
 different from `ModerationState.hidden` and `ImageState.pending`, which only control what the package
 shows: those records, and their image assets, stay fetchable by any client that queries them. Use
 private feedback, not moderation, for anything that must not be public, such as screenshots.

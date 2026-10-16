@@ -194,7 +194,7 @@ import Observation
 
             guard started == generation else { return report }
 
-            guard var detailed = PrivateReport(record: record) else { return report }
+            guard var detailed = makeReport(record) else { return report }
 
             if let assets = record[FieldKey.images] as? [CKAsset] {
 
@@ -264,7 +264,7 @@ import Observation
 
                 collected += page.matchResults
                     .compactMap { try? $0.1.get() }
-                    .compactMap { PrivateReport(record: $0) }
+                    .compactMap { makeReport($0) }
 
                 cursor = page.queryCursor
                 isFirstPage = false
@@ -336,7 +336,7 @@ import Observation
             throw CloudKitErrorHandler.classify(error)
         }
 
-        guard let saved = PrivateReport(record: seeded) else {
+        guard let saved = makeReport(seeded) else {
 
             throw FeedbackError.underlying(String(localized: "Could not read back the saved report."))
         }
@@ -395,12 +395,22 @@ import Observation
 
             let record = try await database.record(for: report.id)
 
+            // Never written by a developer, so `replies` and `status` are whatever the creator put there
+            // at creation. Discard them before the first developer write makes them look trusted.
+            if !PrivateReportTrust.isDeveloperModified(record,
+                                                       developerUserRecordIDs: container.configuration.developerUserRecordIDs,
+                                                       currentUserRecordID: container.currentUserRecordID) {
+
+                record[FieldKey.replies] = [String]()
+                record[FieldKey.status] = PrivateReportTrust.initialStatus.rawValue
+            }
+
             change(record)
             record[FieldKey.lastActivityAt] = Date.now
 
             let saved = try await database.save(record)
 
-            if started == generation, var updated = PrivateReport(record: saved) {
+            if started == generation, var updated = makeReport(saved) {
 
                 updated.imageURLs = report.imageURLs
                 replaceLocally(updated)
@@ -560,8 +570,10 @@ import Observation
         return collected
     }
 
-    /// The named reports that exist and were created by `requesterID`. Missing ones are skipped -
-    /// already deleted is the outcome wanted.
+    /// The named reports that exist and were created by `requesterID`. Only reports CloudKit confirms
+    /// are missing are skipped - already deleted is the outcome wanted. Any other per-record failure is
+    /// thrown, so the deletion request stays in the queue for a retry rather than being removed while a
+    /// report survives.
     private func ownedReportIDs(named names: [String], requesterID: String) async throws -> [CKRecord.ID] {
 
         let ids = names.map { CKRecord.ID(recordName: $0) }
@@ -575,8 +587,19 @@ import Observation
 
         for (id, result) in results {
 
-            guard let record = try? result.get(),
-                  let owner = PrivateDeletionPolicy.resolvedCreator(record.creatorUserRecordID?.recordName,
+            let record: CKRecord
+
+            switch result {
+
+            case .success(let fetched):
+                record = fetched
+
+            case .failure(let error):
+                if CloudKitErrorHandler.isRecordMissing(error) { continue }
+                throw error
+            }
+
+            guard let owner = PrivateDeletionPolicy.resolvedCreator(record.creatorUserRecordID?.recordName,
                                                                     currentUserRecordID: me) else { continue }
 
             owners[id.recordName] = owner
@@ -584,6 +607,14 @@ import Observation
 
         return PrivateDeletionPolicy.deletableReportNames(requested: names, owners: owners, requesterID: requesterID)
             .map { CKRecord.ID(recordName: $0) }
+    }
+
+    /// Maps a record with the developer-field trust rule applied - see `PrivateReportTrust`.
+    private func makeReport(_ record: CKRecord) -> PrivateReport? {
+
+        PrivateReport(record: record,
+                      developerUserRecordIDs: container.configuration.developerUserRecordIDs,
+                      currentUserRecordID: container.currentUserRecordID)
     }
 
     /// Swaps in a fresher copy wherever the report is listed.

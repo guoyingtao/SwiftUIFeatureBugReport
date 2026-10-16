@@ -81,7 +81,7 @@ struct PrivateReportMappingTests {
         record[FieldKey.platform] = "iOS"
         record[FieldKey.lastActivityAt] = Date(timeIntervalSince1970: 1_000)
 
-        let report = try #require(PrivateReport(record: record))
+        let report = try #require(PrivateReport(record: record, trustsDeveloperFields: true))
 
         #expect(report.title == "Crash on launch")
         #expect(report.body == "Screenshot attached.")
@@ -97,7 +97,7 @@ struct PrivateReportMappingTests {
     @Test("A record of another type is rejected")
     func rejectsOtherTypes() {
 
-        #expect(PrivateReport(record: CKRecord(recordType: RecordType.request)) == nil)
+        #expect(PrivateReport(record: CKRecord(recordType: RecordType.request), trustsDeveloperFields: true) == nil)
     }
 
     @Test("Unreadable reply entries are skipped and the rest are sorted oldest first")
@@ -199,5 +199,97 @@ struct PrivateDeletionPolicyTests {
     func pendingCounts() {
 
         #expect(MyDataCounts(privateReports: 2, privateDeletionRequested: true).isEmpty == false)
+    }
+}
+
+
+@Suite("Developer-controlled fields on private reports")
+struct PrivateReportTrustTests {
+
+    private func forgedRecord() throws -> CKRecord {
+
+        let record = CKRecord(recordType: RecordType.privateReport, recordID: CKRecord.ID(recordName: "pr2"))
+
+        record[FieldKey.title] = "Crafted"
+        record[FieldKey.status] = RequestStatus.complete.rawValue
+        record[FieldKey.replies] = [try PrivateReply(message: "Refund approved", createdAt: .now).encoded()]
+
+        return record
+    }
+
+    @Test("Untrusted records show no replies and the initial status")
+    func untrustedFieldsIgnored() throws {
+
+        let report = try #require(PrivateReport(record: try forgedRecord(), trustsDeveloperFields: false))
+
+        #expect(report.title == "Crafted")
+        #expect(report.replies.isEmpty)
+        #expect(report.status == PrivateReportTrust.initialStatus)
+    }
+
+    /// A record nobody has modified yet - as in this test - has no last modifier, so it is not trusted.
+    @Test("A record with no last modifier is not trusted")
+    func noModifier() throws {
+
+        let report = try #require(PrivateReport(record: try forgedRecord(), developerUserRecordIDs: ["_dev"], currentUserRecordID: "_dev"))
+
+        #expect(report.replies.isEmpty)
+    }
+
+    @Test("Only a configured developer as last modifier is trusted")
+    func trustRule() {
+
+        let developers = ["_dev"]
+
+        #expect(PrivateReportTrust.isTrusted(lastModifierRecordName: "_dev", developerUserRecordIDs: developers, currentUserRecordID: "_user"))
+        #expect(PrivateReportTrust.isTrusted(lastModifierRecordName: "_user", developerUserRecordIDs: developers, currentUserRecordID: "_user") == false)
+        #expect(PrivateReportTrust.isTrusted(lastModifierRecordName: nil, developerUserRecordIDs: developers, currentUserRecordID: "_dev") == false)
+        #expect(PrivateReportTrust.isTrusted(lastModifierRecordName: "_dev", developerUserRecordIDs: [], currentUserRecordID: "_dev") == false)
+    }
+
+    @Test("CloudKit's current-user placeholder resolves before comparing")
+    func placeholder() {
+
+        #expect(PrivateReportTrust.isTrusted(lastModifierRecordName: CKCurrentUserDefaultName,
+                                             developerUserRecordIDs: ["_dev"],
+                                             currentUserRecordID: "_dev"))
+        #expect(PrivateReportTrust.isTrusted(lastModifierRecordName: CKCurrentUserDefaultName,
+                                             developerUserRecordIDs: ["_dev"],
+                                             currentUserRecordID: "_user") == false)
+        #expect(PrivateReportTrust.isTrusted(lastModifierRecordName: CKCurrentUserDefaultName,
+                                             developerUserRecordIDs: ["_dev"],
+                                             currentUserRecordID: nil) == false)
+    }
+}
+
+
+@Suite("Batch per-record failures")
+struct CloudKitBatchFailureTests {
+
+    @Test("Deleting an already missing record is not a failure")
+    func missingDeleteIgnored() {
+
+        #expect(CloudKitBatch.firstUnexpectedFailure(saveErrors: [], deleteErrors: [CKError(.unknownItem)]) == nil)
+    }
+
+    @Test("Any other delete failure is surfaced")
+    func deleteFailureSurfaced() throws {
+
+        let failure = try #require(CloudKitBatch.firstUnexpectedFailure(saveErrors: [],
+                                                                        deleteErrors: [CKError(.unknownItem), CKError(.permissionFailure)]))
+
+        #expect((failure as? CKError)?.code == .permissionFailure)
+    }
+
+    @Test("A save colliding with an existing record is deduplication, not failure")
+    func duplicateSaveIgnored() {
+
+        #expect(CloudKitBatch.firstUnexpectedFailure(saveErrors: [CKError(.serverRecordChanged)], deleteErrors: []) == nil)
+    }
+
+    @Test("Any other save failure is surfaced")
+    func saveFailureSurfaced() {
+
+        #expect(CloudKitBatch.firstUnexpectedFailure(saveErrors: [CKError(.networkFailure)], deleteErrors: []) != nil)
     }
 }

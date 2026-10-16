@@ -35,7 +35,19 @@ public struct PrivateReport: Identifiable, Sendable, Hashable {
     /// Populated only by `PrivateReportService.loadDetail(_:)`, the one place that fetches the assets.
     public var imageURLs: [URL] = []
 
-    public init?(record: CKRecord) {
+    /// Maps a record, trusting `replies` and `status` only if a developer wrote them - see
+    /// `PrivateReportTrust`.
+    public init?(record: CKRecord, developerUserRecordIDs: [String], currentUserRecordID: String?) {
+
+        self.init(record: record,
+                  trustsDeveloperFields: PrivateReportTrust.isDeveloperModified(record,
+                                                                                developerUserRecordIDs: developerUserRecordIDs,
+                                                                                currentUserRecordID: currentUserRecordID))
+    }
+
+    /// - Parameter trustsDeveloperFields: When `false`, `replies` reads as empty and `status` as
+    ///   `.open`, whatever the record holds.
+    init?(record: CKRecord, trustsDeveloperFields: Bool) {
 
         guard record.recordType == RecordType.privateReport else { return nil }
 
@@ -43,9 +55,11 @@ public struct PrivateReport: Identifiable, Sendable, Hashable {
         self.title = record[FieldKey.title] as? String ?? ""
         self.body = record[FieldKey.body] as? String ?? ""
         self.kind = FeedbackType(rawValue: record[FieldKey.kind] as? String ?? "") ?? .bug
-        self.status = RequestStatus(rawValue: record[FieldKey.status] as? String ?? "") ?? .open
+        self.status = trustsDeveloperFields
+            ? RequestStatus(rawValue: record[FieldKey.status] as? String ?? "") ?? .open
+            : PrivateReportTrust.initialStatus
         self.creatorID = record[FieldKey.creatorID] as? String ?? ""
-        self.replies = PrivateReply.decode(record[FieldKey.replies] as? [String] ?? [])
+        self.replies = trustsDeveloperFields ? PrivateReply.decode(record[FieldKey.replies] as? [String] ?? []) : []
         self.lastActivityAt = record[FieldKey.lastActivityAt] as? Date ?? record.creationDate ?? .now
         self.createdAt = record.creationDate ?? .now
 
@@ -78,6 +92,42 @@ public struct PrivateReport: Identifiable, Sendable, Hashable {
             FieldKey.appVersion, FieldKey.buildNumber, FieldKey.osVersion,
             FieldKey.deviceModel, FieldKey.platform
         ]
+    }
+}
+
+
+/// Decides whether a `PrivateReport`'s developer-controlled fields - `replies` and `status` - can be
+/// believed.
+///
+/// The creator has no WRITE on the record type, but `_icloud: CREATE` lets them choose every field's
+/// **initial** value - so a crafted report could arrive with "developer replies" already in it. CloudKit
+/// does record who last modified a record, and that cannot be forged: if the last modifier is a
+/// configured developer, a developer wrote the current values. Otherwise the record is exactly as its
+/// creator made it, and those two fields are ignored.
+enum PrivateReportTrust {
+
+    /// What `status` reads as until a developer has written to the report.
+    static let initialStatus = RequestStatus.open
+
+    static func isDeveloperModified(_ record: CKRecord,
+                                                developerUserRecordIDs: [String],
+                                                currentUserRecordID: String?) -> Bool {
+
+        isTrusted(lastModifierRecordName: record.lastModifiedUserRecordID?.recordName,
+                  developerUserRecordIDs: developerUserRecordIDs,
+                  currentUserRecordID: currentUserRecordID)
+    }
+
+    /// `CKCurrentUserDefaultName` - what CloudKit reports when the signed-in user is the modifier - is
+    /// resolved to `currentUserRecordID` first, so a developer's own edits are recognised.
+    static func isTrusted(lastModifierRecordName: String?,
+                                      developerUserRecordIDs: [String],
+                                      currentUserRecordID: String?) -> Bool {
+
+        guard let modifier = PrivateDeletionPolicy.resolvedCreator(lastModifierRecordName,
+                                                                   currentUserRecordID: currentUserRecordID) else { return false }
+
+        return developerUserRecordIDs.contains(modifier)
     }
 }
 

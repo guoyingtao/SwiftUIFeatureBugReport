@@ -58,7 +58,7 @@ public struct PrivateDeletionRequest: Identifiable, Sendable, Hashable {
 enum PrivateDeletionPolicy {
 
     /// Maps CloudKit's placeholder for "the signed-in user" to their real record name.
-    nonisolated static func resolvedCreator(_ recordName: String?, currentUserRecordID: String?) -> String? {
+    static func resolvedCreator(_ recordName: String?, currentUserRecordID: String?) -> String? {
 
         guard let recordName, !recordName.isEmpty else { return nil }
 
@@ -67,7 +67,7 @@ enum PrivateDeletionPolicy {
 
     /// The report names covered by a user's own pending requests, for marking rows. `nil` means
     /// "everything", from an `.all` request.
-    nonisolated static func pendingReportNames(in requests: [PrivateDeletionRequest]) -> Set<String>? {
+    static func pendingReportNames(in requests: [PrivateDeletionRequest]) -> Set<String>? {
 
         if requests.contains(where: { $0.scope == .all }) { return nil }
 
@@ -75,7 +75,7 @@ enum PrivateDeletionPolicy {
     }
 
     /// Whether a report is covered by the given pending requests.
-    nonisolated static func isPending(reportName: String, in requests: [PrivateDeletionRequest]) -> Bool {
+    static func isPending(reportName: String, in requests: [PrivateDeletionRequest]) -> Bool {
 
         guard let names = pendingReportNames(in: requests) else { return !requests.isEmpty }
 
@@ -88,7 +88,7 @@ enum PrivateDeletionPolicy {
     ///
     /// - Parameter owners: Report record name to its creator's record name, for the reports that
     ///   could be fetched.
-    nonisolated static func deletableReportNames(requested: [String],
+    static func deletableReportNames(requested: [String],
                                                  owners: [String: String],
                                                  requesterID: String) -> [String] {
 

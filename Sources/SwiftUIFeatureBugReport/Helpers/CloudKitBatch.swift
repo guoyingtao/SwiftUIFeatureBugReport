@@ -42,6 +42,21 @@ enum CloudKitBatch {
         try await modify(saving: [], deleting: recordIDs, in: database)
     }
 
+    /// The first per-record failure that is not an expected outcome.
+    ///
+    /// - A delete of a record that is already gone succeeded in every way that matters.
+    /// - A save that collides with an existing record is how deterministic record names deduplicate
+    ///   (a repeated announcement, a second vote), so it is not a failure either.
+    ///
+    /// Anything else - a permission failure, a network drop, a rate limit - is returned so the caller
+    /// stops instead of reporting completion.
+    static func firstUnexpectedFailure(saveErrors: [any Error], deleteErrors: [any Error]) -> (any Error)? {
+
+        if let failure = deleteErrors.first(where: { !CloudKitErrorHandler.isRecordMissing($0) }) { return failure }
+
+        return saveErrors.first { !CloudKitErrorHandler.isDuplicateRecord($0) }
+    }
+
     private static func perform(saving records: [CKRecord],
                                 deleting recordIDs: [CKRecord.ID],
                                 in database: CKDatabase) async throws {
@@ -50,10 +65,28 @@ enum CloudKitBatch {
 
         do {
 
-            _ = try await database.modifyRecords(saving: records,
-                                                 deleting: recordIDs,
-                                                 savePolicy: .changedKeys,
-                                                 atomically: false)
+            let results = try await database.modifyRecords(saving: records,
+                                                           deleting: recordIDs,
+                                                           savePolicy: .changedKeys,
+                                                           atomically: false)
+
+            // With `atomically: false` the call succeeds overall even when individual records fail, and
+            // the failures are only in these results. Ignoring them made a failed delete look done.
+            let saveErrors = results.saveResults.values.compactMap { result -> (any Error)? in
+
+                if case .failure(let error) = result { return error }
+
+                return nil
+            }
+
+            let deleteErrors = results.deleteResults.values.compactMap { result -> (any Error)? in
+
+                if case .failure(let error) = result { return error }
+
+                return nil
+            }
+
+            if let failure = firstUnexpectedFailure(saveErrors: saveErrors, deleteErrors: deleteErrors) { throw failure }
         }
         catch {
 
