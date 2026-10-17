@@ -150,7 +150,9 @@ public struct MyDataCounts: Sendable, Equatable {
             //
             // Only the `dev` role may delete them - `_creator` has READ only, so a submitter cannot
             // rewrite the developer's replies. A submitter therefore *requests* deletion, which the
-            // developer processes from the private reports queue. Per app, that request names this
+            // developer processes from the private reports queue. Their follow-ups (`PrivateReply`, also
+            // `_creator` READ only) are deleted when the developer processes that request, and cascade
+            // with the reports. Per app, that request names this
             // app's reports rather than asking for `.all`.
             let privateIDs = try await scopedRecordIDs(ofType: RecordType.privateReport, createdBy: creatorID,
                                                        scope: scope, throwsOnMissingType: false)
@@ -158,6 +160,13 @@ public struct MyDataCounts: Sendable, Equatable {
 
             if container.isDeveloper {
 
+                // Their follow-ups on private reports (`PrivateReply`) go first. They also cascade with
+                // their reports, but follow-ups pointing elsewhere would not. Scoped by their own
+                // `appID`, which is their report's. A schema without the type has none.
+                let followUpIDs = try await scopedRecordIDs(ofType: RecordType.privateReply, createdBy: creatorID,
+                                                            scope: scope, throwsOnMissingType: false)
+
+                try await CloudKitBatch.delete(followUpIDs, in: database)
                 try await CloudKitBatch.delete(privateIDs, in: database)
 
                 let pending = try await deletionRequests(createdBy: creatorID)

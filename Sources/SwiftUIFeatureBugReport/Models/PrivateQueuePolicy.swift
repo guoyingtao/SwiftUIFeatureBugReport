@@ -46,12 +46,17 @@ enum PrivateQueueFilter: String, CaseIterable, Hashable {
 ///
 /// **Pending** means the developer still owes an action. Two kinds of item count:
 ///
-/// 1. A private report whose `status` is still `.open` (the initial status - there is no separate
-///    "new") **and** that has no developer reply yet, **unless** a pending deletion request from its
-///    own creator covers it - that request is the thing to act on, and counting both would count one
-///    piece of work twice. Replying, or moving the status off `.open`, takes a report out.
+/// 1. A private report whose conversation (`PrivateThread`) ends with the **submitter**, **unless** a
+///    pending deletion request from its own creator covers it - that request is the thing to act on,
+///    and counting both would count one piece of work twice. In detail:
+///    - The developer spoke last (a trusted reply, or a developer's `PrivateReply`): not pending.
+///    - The submitter's follow-up is the latest message: pending, unless the status is `.complete`.
+///    - Nothing after the report itself: pending while the status is still `.open` (the initial
+///      status - there is no separate "new"). Moving it off `.open` without replying takes it out,
+///      as before follow-ups existed.
 ///    A report a developer never wrote to reads as `.open` with no replies (see
-///    `PrivateReportTrust`), so it counts - correctly, since nobody has looked at it.
+///    `PrivateReportTrust`), so it counts - correctly, since nobody has looked at it. Follow-ups whose
+///    creator is neither the report's creator nor a developer are ignored (`PrivateThread.author`).
 /// 2. Every `PrivateDeletionRequest` that exists. Processing one deletes it, so every request still
 ///    loaded is pending by definition.
 ///
@@ -65,9 +70,28 @@ enum PrivateQueuePolicy {
         status == .open && replyCount == 0
     }
 
-    static func isPending(_ report: PrivateReport, deletionRequests: [PrivateDeletionRequest]) -> Bool {
+    /// The thread rule behind (1), before the deletion-request exclusion.
+    static func isAwaitingDeveloper(_ report: PrivateReport,
+                                    followUps: [PrivateFollowUp],
+                                    developerUserRecordIDs: [String]) -> Bool {
 
-        guard isAwaitingDeveloper(status: report.status, replyCount: report.replies.count) else { return false }
+        let messages = PrivateThread.messages(report: report, followUps: followUps, developerUserRecordIDs: developerUserRecordIDs)
+
+        guard let latest = messages.last else { return isAwaitingDeveloper(status: report.status, replyCount: 0) }
+
+        guard latest.author == .submitter else { return false }
+
+        return report.status != .complete
+    }
+
+    /// - Parameter followUps: The report's `PrivateReply` records, any order. Empty reproduces the
+    ///   rule from before follow-ups existed.
+    static func isPending(_ report: PrivateReport,
+                          deletionRequests: [PrivateDeletionRequest],
+                          followUps: [PrivateFollowUp] = [],
+                          developerUserRecordIDs: [String] = []) -> Bool {
+
+        guard isAwaitingDeveloper(report, followUps: followUps, developerUserRecordIDs: developerUserRecordIDs) else { return false }
 
         return !PrivateDeletionPolicy.isPending(reportName: report.id.recordName,
                                                 reportCreator: report.creatorID,
@@ -75,11 +99,22 @@ enum PrivateQueuePolicy {
     }
 
     /// The badge figure: pending reports in `appFilter` plus every pending deletion request.
+    ///
+    /// - Parameter followUps: `PrivateReply` records keyed by report record name.
     static func pendingCount(reports: [PrivateReport],
                              deletionRequests: [PrivateDeletionRequest],
-                             appFilter: AppFilter = .all) -> Int {
+                             appFilter: AppFilter = .all,
+                             followUps: [String: [PrivateFollowUp]] = [:],
+                             developerUserRecordIDs: [String] = []) -> Int {
 
-        reports.count(where: { appFilter.matches($0.appID) && isPending($0, deletionRequests: deletionRequests) })
+        reports.count(where: { report in
+
+            appFilter.matches(report.appID)
+                && isPending(report,
+                             deletionRequests: deletionRequests,
+                             followUps: followUps[report.id.recordName] ?? [],
+                             developerUserRecordIDs: developerUserRecordIDs)
+        })
             + deletionRequests.count
     }
 
@@ -99,7 +134,9 @@ enum PrivateQueuePolicy {
                        deletionRequests: [PrivateDeletionRequest],
                        appFilter: AppFilter,
                        filter: PrivateQueueFilter,
-                       searchText: String) -> [PrivateReport] {
+                       searchText: String,
+                       followUps: [String: [PrivateFollowUp]] = [:],
+                       developerUserRecordIDs: [String] = []) -> [PrivateReport] {
 
         reports.filter { report in
 
@@ -107,7 +144,10 @@ enum PrivateQueuePolicy {
 
             switch filter {
 
-            case .pending: return isPending(report, deletionRequests: deletionRequests)
+            case .pending: return isPending(report,
+                                            deletionRequests: deletionRequests,
+                                            followUps: followUps[report.id.recordName] ?? [],
+                                            developerUserRecordIDs: developerUserRecordIDs)
             case .all: return true
             }
         }

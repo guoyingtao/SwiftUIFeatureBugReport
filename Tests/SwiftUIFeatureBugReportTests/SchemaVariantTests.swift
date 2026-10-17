@@ -23,7 +23,7 @@ struct SchemaVariantTests {
     func sharedTypes() throws {
 
         let schemas = try [schema(named: "Schema.ckdb"), schema(named: "Schema-NoComments.ckdb")]
-        let required = ["Activity", "DevComment", "Follow", "PrivateReport", "PrivateReportDeletionRequest", "Report", "Request",
+        let required = ["Activity", "DevComment", "Follow", "PrivateReply", "PrivateReport", "PrivateReportDeletionRequest", "Report", "Request",
                         "RequestMetadata", "Users", "Vote"]
 
         for contents in schemas {
@@ -64,7 +64,7 @@ struct SchemaVariantTests {
 
             let contents = try schema(named: name)
 
-            for recordType in ["Request", "PrivateReport", "Activity"] {
+            for recordType in ["Request", "PrivateReport", "PrivateReply", "Activity"] {
 
                 let block = try grants(of: recordType, in: contents)
 
@@ -123,6 +123,40 @@ struct SchemaVariantTests {
 
             #expect(!requestBlock.contains("files"), "\(name)")
             #expect(!requestBlock.contains("fileNames"), "\(name)")
+        }
+    }
+
+    /// Follow-ups must be immutable (no creator WRITE) and invisible to everyone but their author and the
+    /// developer (no `_world`) - otherwise a submitter could rewrite history or a third party read it.
+    @Test("PrivateReply: creator READ only, iCloud CREATE, dev READ/WRITE, no world, in both variants")
+    func privateReplyPermissions() throws {
+
+        for name in ["Schema.ckdb", "Schema-NoComments.ckdb"] {
+
+            let block = try grants(of: "PrivateReply", in: try schema(named: name))
+
+            #expect(!block.contains("_world"), "\(name)")
+            #expect(block.contains("GRANT READ TO \"_creator\""), "\(name)")
+            #expect(!block.contains("WRITE TO \"_creator\""), "\(name)")
+            #expect(block.contains("GRANT CREATE TO \"_icloud\""), "\(name)")
+            #expect(block.contains("GRANT READ, WRITE TO dev"), "\(name)")
+        }
+    }
+
+    /// The thread query filters on `report` and sorts on creation time; the deletion pass queries by
+    /// creator. Without these indexes CloudKit rejects the queries.
+    @Test("PrivateReply has the fields and indexes its queries need, in both variants")
+    func privateReplyIndexes() throws {
+
+        for name in ["Schema.ckdb", "Schema-NoComments.ckdb"] {
+
+            let block = try grants(of: "PrivateReply", in: try schema(named: name))
+
+            #expect(block.range(of: #"\breport\s+REFERENCE QUERYABLE"#, options: .regularExpression) != nil, "\(name)")
+            #expect(block.range(of: #"\bbody\s+STRING"#, options: .regularExpression) != nil, "\(name)")
+            #expect(block.range(of: #""___createTime"\s+TIMESTAMP QUERYABLE SORTABLE"#, options: .regularExpression) != nil, "\(name)")
+            #expect(block.range(of: #""___createdBy"\s+REFERENCE QUERYABLE"#, options: .regularExpression) != nil, "\(name)")
+            #expect(block.range(of: #""___recordID"\s+REFERENCE QUERYABLE"#, options: .regularExpression) != nil, "\(name)")
         }
     }
 }

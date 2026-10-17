@@ -145,7 +145,9 @@ struct PrivateReportsList<Header: View>: View {
                                              deletionRequests: store.privateReports.pendingDeletionRequests,
                                              appFilter: appFilter,
                                              filter: filter,
-                                             searchText: searchText)
+                                             searchText: searchText,
+                                             followUps: store.privateReports.followUpsByReport,
+                                             developerUserRecordIDs: store.configuration.developerUserRecordIDs)
 
         case .mine:
             return store.privateReports.myReports
@@ -559,30 +561,9 @@ struct PrivateReportDetailView: View {
 
         if !report.files.isEmpty { PrivateFileList(store: store, report: report) }
 
-        Section {
+        conversationSection
 
-            if report.replies.isEmpty {
-
-                Text("No replies yet.")
-                    .foregroundStyle(.secondary)
-            }
-            else {
-
-                ForEach(Array(report.replies.enumerated()), id: \.offset) { _, reply in
-
-                    VStack(alignment: .leading, spacing: 3) {
-
-                        Text(reply.message)
-                            .textSelection(.enabled)
-
-                        Text(reply.createdAt, format: .relative(presentation: .named))
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-            }
-
-        } header: { Text("Developer replies") }
+        composerSection
 
         if showsDeveloperControls { developerSections }
 
@@ -591,6 +572,116 @@ struct PrivateReportDetailView: View {
         if let error {
 
             Section { FeedbackErrorBanner(error: error, retry: nil) }
+        }
+    }
+
+    // MARK: - Conversation
+
+    /// The conversation after the report itself: trusted developer replies and the follow-ups
+    /// `PrivateThread` accepts, oldest first.
+    private var messages: [PrivateThreadMessage] { store.privateReports.messages(for: report) }
+
+    @ViewBuilder private var conversationSection: some View {
+
+        Section {
+
+            if messages.isEmpty {
+
+                Text("No replies yet.")
+                    .foregroundStyle(.secondary)
+            }
+            else {
+
+                ForEach(messages) { message in PrivateMessageRow(message: message, viewer: scope == .all ? .developer : .submitter) }
+            }
+
+        } header: { Text("Conversation") }
+    }
+
+    /// At the bottom of the conversation for both sides. A developer's message is stored on the report
+    /// (`reply(to:message:)`); a submitter's is a `PrivateReply` record (`sendFollowUp`).
+    @ViewBuilder private var composerSection: some View {
+
+        if showsDeveloperControls {
+
+            Section {
+
+                FeedbackTextEditor(placeholder: "Reply privately to the person who sent this", text: $replyText)
+
+                sendButton(title: "Send reply", action: sendReply)
+
+            } footer: { Text("Only the person who sent this report can read your reply.") }
+        }
+        else if scope == .mine {
+
+            Section {
+
+                FeedbackTextEditor(placeholder: "Add a message for the developer", text: $replyText)
+                    .disabled(!acceptsFollowUp)
+
+                sendButton(title: "Send", action: sendFollowUp)
+
+            } footer: {
+
+                if acceptsFollowUp {
+
+                    Text("Only you and the developer can see this conversation. Messages can't be edited once sent.")
+                }
+                else {
+
+                    Text("This report is complete, so it no longer takes new messages. Send new feedback instead.")
+                }
+            }
+        }
+    }
+
+    private var acceptsFollowUp: Bool {
+
+        PrivateThread.acceptsFollowUp(report: report, currentUserRecordID: store.container.currentUserRecordID)
+    }
+
+    private func sendButton(title: LocalizedStringKey, action: @escaping () -> Void) -> some View {
+
+        Button(action: action) {
+
+            HStack {
+
+                Text(title)
+
+                if isSending {
+
+                    Spacer()
+
+                    ProgressView().controlSize(.small)
+                }
+            }
+        }
+        .disabled(isSending
+                  || replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                  || (!showsDeveloperControls && !acceptsFollowUp))
+    }
+
+    private func sendFollowUp() {
+
+        let message = replyText
+
+        isSending = true
+        error = nil
+
+        Task {
+
+            do {
+
+                try await store.privateReports.sendFollowUp(message, on: report)
+
+                replyText = ""
+            }
+            catch {
+
+                self.error = error as? FeedbackError ?? CloudKitErrorHandler.classify(error)
+            }
+
+            isSending = false
         }
     }
 
@@ -672,29 +763,6 @@ struct PrivateReportDetailView: View {
 
         Section {
 
-            FeedbackTextEditor(placeholder: "Reply privately to the person who sent this", text: $replyText)
-
-            Button(action: { sendReply() }) {
-
-                HStack {
-
-                    Text("Send reply")
-
-                    if isSending {
-
-                        Spacer()
-
-                        ProgressView().controlSize(.small)
-                    }
-                }
-            }
-            .disabled(isSending || replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-        } header: { Text("Reply") }
-          footer: { Text("Only the person who sent this report can read your reply.") }
-
-        Section {
-
             ForEach(report.environment.disclosureEntries, id: \.label.key) { entry in
 
                 LabeledContent(String(localized: entry.label), value: entry.value)
@@ -756,5 +824,56 @@ struct PrivateReportDetailView: View {
 
             isSending = false
         }
+    }
+}
+
+
+/// One message in a private conversation. The viewer's own messages sit on the trailing side.
+struct PrivateMessageRow: View {
+
+    let message: PrivateThreadMessage
+
+    /// Who is looking: the submitter in "My private reports", a developer in the portal.
+    let viewer: PrivateMessageAuthor
+
+    private var isOwn: Bool { message.author == viewer }
+
+    private var authorLabel: LocalizedStringKey {
+
+        switch (message.author, viewer) {
+
+        case (.submitter, .submitter): return "You"
+        case (.submitter, .developer): return "Sender"
+        case (.developer, _): return "Developer"
+        }
+    }
+
+    var body: some View {
+
+        HStack {
+
+            if isOwn { Spacer(minLength: 40) }
+
+            VStack(alignment: isOwn ? .trailing : .leading, spacing: 3) {
+
+                Text(authorLabel)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                Text(message.body)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(isOwn ? AnyShapeStyle(Color.accentColor.opacity(0.18)) : AnyShapeStyle(.quaternary),
+                                in: RoundedRectangle(cornerRadius: 10))
+
+                Text(message.createdAt, format: .relative(presentation: .named))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            if !isOwn { Spacer(minLength: 40) }
+        }
+        .accessibilityElement(children: .combine)
     }
 }

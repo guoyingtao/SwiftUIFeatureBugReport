@@ -23,6 +23,31 @@ import Observation
     /// Every pending deletion request, oldest first. Developer only.
     public private(set) var pendingDeletionRequests: [PrivateDeletionRequest] = []
 
+    /// Follow-ups with their text, keyed by report record name - filled per report by `loadDetail`.
+    private var threadFollowUps: [String: [PrivateFollowUp]] = [:]
+
+    /// Developer only: every follow-up's author and time (no text), keyed by report record name, for
+    /// the pending rule. Filled by `loadAllReports`.
+    private var followUpActivity: [String: [PrivateFollowUp]] = [:]
+
+    /// The follow-ups known for every report: the detail's full copy where loaded, the bulk activity
+    /// otherwise. Unfiltered - `PrivateThread` decides which are shown.
+    public var followUpsByReport: [String: [PrivateFollowUp]] { followUpActivity.merging(threadFollowUps) { _, thread in thread } }
+
+    /// One report's follow-ups. See `followUpsByReport`.
+    public func followUps(for report: PrivateReport) -> [PrivateFollowUp] {
+
+        threadFollowUps[report.id.recordName] ?? followUpActivity[report.id.recordName] ?? []
+    }
+
+    /// The report's conversation after its opening message - see `PrivateThread`.
+    public func messages(for report: PrivateReport) -> [PrivateThreadMessage] {
+
+        PrivateThread.messages(report: report,
+                               followUps: followUps(for: report),
+                               developerUserRecordIDs: container.configuration.developerUserRecordIDs)
+    }
+
     public private(set) var isLoading = false
 
     /// Whether `loadMine()` has produced a list for the current identity. Private-only mode's board
@@ -55,6 +80,8 @@ import Observation
         allReports = []
         myDeletionRequests = []
         pendingDeletionRequests = []
+        threadFollowUps = [:]
+        followUpActivity = [:]
         error = nil
     }
 
@@ -73,7 +100,9 @@ import Observation
 
         PrivateQueuePolicy.pendingCount(reports: allReports,
                                         deletionRequests: pendingDeletionRequests,
-                                        appFilter: appFilter)
+                                        appFilter: appFilter,
+                                        followUps: followUpsByReport,
+                                        developerUserRecordIDs: container.configuration.developerUserRecordIDs)
     }
 
     // MARK: - Reading
@@ -206,6 +235,157 @@ import Observation
         if let loaded = await loadAll(matching: NSPredicate(value: true)), started == generation { allReports = loaded }
 
         await loadPendingDeletionRequests()
+        await loadFollowUpActivity()
+    }
+
+    // MARK: - Follow-ups
+
+    /// Developer only: every follow-up's author and time, for the pending rule. A schema without the
+    /// `PrivateReply` type reads as none.
+    private func loadFollowUpActivity() async {
+
+        guard container.isDeveloper else { return }
+
+        let started = generation
+
+        do {
+
+            let loaded = try await fetchFollowUps(matching: NSPredicate(value: true), desiredKeys: [FieldKey.report], sorted: false)
+
+            if started == generation { followUpActivity = Dictionary(grouping: loaded, by: \.reportName) }
+        }
+        catch {
+
+            if started == generation { self.error = CloudKitErrorHandler.classifyQuery(error) }
+        }
+    }
+
+    /// One report's follow-ups, with their text, oldest first.
+    ///
+    /// For the submitter CloudKit returns only the ones they created (`_creator` READ); for a developer,
+    /// every one (`dev` READ). Either way `PrivateThread` drops any whose creator is neither the
+    /// report's creator nor a developer.
+    public func loadFollowUps(for report: PrivateReport) async {
+
+        let started = generation
+        let reference = CKRecord.Reference(recordID: report.id, action: .none)
+
+        do {
+
+            let loaded = try await fetchFollowUps(matching: NSPredicate(format: "%K == %@", FieldKey.report, reference),
+                                                  desiredKeys: PrivateFollowUp.desiredKeys,
+                                                  sorted: true)
+
+            if started == generation { threadFollowUps[report.id.recordName] = loaded }
+        }
+        catch {
+
+            if started == generation { self.error = CloudKitErrorHandler.classifyQuery(error) }
+        }
+    }
+
+    /// Sends a follow-up on the signed-in user's own report.
+    ///
+    /// Refused unless `PrivateThread.acceptsFollowUp` - the report must be theirs and not `.complete`.
+    /// That is a convenience: what CloudKit enforces is that the record is attributed to its creator,
+    /// and `PrivateThread` shows it only on a report that creator made. The record is immutable once
+    /// saved (`_creator` READ only).
+    public func sendFollowUp(_ message: String, on report: PrivateReport) async throws {
+
+        guard let me = container.currentUserRecordID else { throw FeedbackError.notSignedIn }
+
+        guard PrivateThread.acceptsFollowUp(report: report, currentUserRecordID: me) else {
+
+            throw FeedbackError.underlying(String(localized: "You can't reply to this report."))
+        }
+
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmed.isEmpty else { return }
+
+        let started = generation
+        let record = CKRecord(recordType: RecordType.privateReply)
+
+        record[FieldKey.report] = CKRecord.Reference(recordID: report.id, action: .deleteSelf)
+        record[FieldKey.body] = String(trimmed.prefix(PrivateThread.maximumMessageLength))
+
+        // The report's own app, so per-app deletion finds the follow-up with its report.
+        if let appID = report.appID { record[FieldKey.appID] = appID }
+
+        let saved: CKRecord
+
+        do {
+
+            saved = try await database.save(record)
+        }
+        catch {
+
+            throw CloudKitErrorHandler.classify(error)
+        }
+
+        guard started == generation, let followUp = PrivateFollowUp(record: saved, currentUserRecordID: me) else { return }
+
+        threadFollowUps[report.id.recordName, default: []].append(followUp)
+    }
+
+    /// Every `PrivateReply` matching `predicate`, all pages. A missing record type reads as none.
+    private func fetchFollowUps(matching predicate: NSPredicate, desiredKeys: [String], sorted: Bool) async throws -> [PrivateFollowUp] {
+
+        let me = container.currentUserRecordID
+        let query = CKQuery(recordType: RecordType.privateReply, predicate: predicate)
+
+        if sorted { query.sortDescriptors = [NSSortDescriptor(key: FieldKey.creationDate, ascending: true)] }
+
+        var collected: [PrivateFollowUp] = []
+        var cursor: CKQueryOperation.Cursor?
+        var isFirstPage = true
+
+        repeat {
+
+            do {
+
+                let page: (matchResults: [(CKRecord.ID, Result<CKRecord, any Error>)], queryCursor: CKQueryOperation.Cursor?)
+
+                if let cursor {
+
+                    page = try await database.records(continuingMatchFrom: cursor, desiredKeys: desiredKeys)
+                }
+                else {
+
+                    page = try await database.records(matching: query, desiredKeys: desiredKeys)
+                }
+
+                collected += page.matchResults
+                    .compactMap { try? $0.1.get() }
+                    .compactMap { PrivateFollowUp(record: $0, currentUserRecordID: me) }
+
+                cursor = page.queryCursor
+                isFirstPage = false
+            }
+            catch {
+
+                if CloudKitErrorHandler.isMissingRecordType(error, isFirstPage: isFirstPage) { return [] }
+
+                throw error
+            }
+        }
+        while cursor != nil
+
+        return collected
+    }
+
+    /// Developer only: the IDs of every `PrivateReply` created by `requesterID`, with the report each
+    /// points at. A missing record type reads as none.
+    private func followUpIDs(createdBy requesterID: String) async throws -> [(id: CKRecord.ID, reportName: String)] {
+
+        guard !requesterID.isEmpty else { return [] }
+
+        let reference = CKRecord.Reference(recordID: CKRecord.ID(recordName: requesterID), action: .none)
+
+        return try await fetchFollowUps(matching: NSPredicate(format: "creatorUserRecordID == %@", reference),
+                                        desiredKeys: [FieldKey.report],
+                                        sorted: false)
+            .map { (id: $0.id, reportName: $0.reportName) }
     }
 
     /// Fetches the full record including its images. The **only** place the image assets are fetched.
@@ -221,6 +401,10 @@ import Observation
             guard started == generation else { return report }
 
             guard var detailed = makeReport(record) else { return report }
+
+            await loadFollowUps(for: detailed)
+
+            guard started == generation else { return report }
 
             if let assets = record[FieldKey.images] as? [CKAsset] {
 
@@ -632,6 +816,15 @@ import Observation
             case .reports: targets = try await ownedReportIDs(named: request.reportNames, requesterID: request.requesterID)
             }
 
+            // The requester's follow-ups go with the reports: `.deleteSelf` cascades them, and they are
+            // deleted explicitly too so nothing depends on the cascade. An `.all` request takes every
+            // follow-up they created, including any pointing at reports that are not theirs.
+            let targetNames = Set(targets.map(\.recordName))
+            let followUps = try await followUpIDs(createdBy: request.requesterID)
+                .filter { request.scope == .all || targetNames.contains($0.reportName) }
+                .map { $0.id }
+
+            try await CloudKitBatch.delete(followUps, in: database)
             try await CloudKitBatch.delete(targets, in: database)
 
             do {
@@ -649,6 +842,7 @@ import Observation
 
             allReports.removeAll { deleted.contains($0.id) }
             myReports.removeAll { deleted.contains($0.id) }
+            targetNames.forEach { threadFollowUps[$0] = nil; followUpActivity[$0] = nil }
             pendingDeletionRequests.removeAll { $0.id == request.id }
             myDeletionRequests.removeAll { $0.id == request.id }
         }

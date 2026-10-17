@@ -156,13 +156,23 @@ carry images even with `allowImageAttachments: false`.
 Submitters can read but not edit or delete private reports. They ask the developer to delete them,
 and the developer handles those requests at the top of the portal's Private tab.
 
+Each private report is a **conversation**. Its detail screen, for the submitter and in the portal alike,
+shows one chronological thread with a composer at the bottom. The developer's messages are stored on the
+report (`replies`), as before, so existing replies keep working. The submitter's follow-ups are
+`PrivateReply` records, which are immutable once sent. Submitters can write until the report's status is
+**Complete** (`RequestStatus` has no separate closed or declined state). Follow-ups from anyone other than
+the report's creator or a configured developer are never shown. See
+[Privacy](Docs/Privacy.md#conversations).
+
 The Private tab's title and the portal button on the board show a **pending count**:
 
-- private reports whose status is still Open **and** that have no developer reply yet, not counting one
-  already covered by a deletion request from its own sender (that request is what you act on), plus
+- private reports whose conversation ends with the **sender**: a new report still Open with no reply,
+  or one whose latest message is the sender's follow-up (any status except Complete). A report already
+  covered by a deletion request from its own sender isn't counted (that request is what you act on). Plus
 - every unprocessed deletion request (processing deletes the request, so all that remain are pending).
 
-Replying or changing the status takes a report out of the count. The board's figure covers every app;
+Replying takes a report out of the count until the sender writes again. Moving a report off Open
+without replying also takes it out, as long as the sender hasn't followed up. The board's figure covers every app;
 the Private tab's follows the app filter, except that deletion requests have no app and always count.
 The rule is `PrivateQueuePolicy`. The Pending filter lists exactly the reports it counts.
 Leave it `.disabled` until `PrivateReport` is deployed. See [Privacy](Docs/Privacy.md#private-feedback).

@@ -80,6 +80,27 @@ inside a user's book file). Say so in your privacy policy if you turn this on, a
 as the user's personal content. Opened files are copied to the app's temporary directory and are cleared
 by the system. Deleting a private report deletes its files with it.
 
+### Conversations
+
+A private report is a conversation between its sender and the developer, shown as one thread on both
+sides. The two halves are stored differently because of how CloudKit grants work:
+
+- **Developer messages** stay in the report's `replies` field, as before. The submitter can read them
+  because they created the report. They're trusted only when a developer last modified the report (see
+  above), so a submitter can't plant a "developer reply".
+- **Submitter follow-ups** are `PrivateReply` records (`_creator` READ, `_icloud` CREATE, `dev` READ,
+  WRITE, no `_world`). The submitter can read their own but never edit them. The developer reads them
+  through `dev`. Nobody else can read them.
+
+Because `_icloud` CREATE lets any signed-in user create a `PrivateReply` naming any report, the package
+shows a follow-up only if its CloudKit creator (which clients can't forge) is the report's creator or a
+configured developer. Others are ignored, and they don't affect the pending count either. Such records
+are readable only by their own creator and `dev`, so nobody else's conversation is exposed.
+
+Follow-ups can be sent until the report is marked Complete. Developer replies are timed by the
+developer's device clock and follow-ups by CloudKit's, so a badly wrong clock can misplace a message in
+the thread.
+
 ### Deleting private reports
 
 Because the creator has no WRITE, a submitter cannot delete their own private report either. They ask
@@ -97,7 +118,12 @@ button. Only reports **created by the requesting account** are deleted, checked 
 CloudKit creator. A request that names someone else's report deletes nothing.
 
 A developer using `AccountDataService.delete(creatorID:)` (for example for a request that arrived by
-email) deletes that user's private reports and deletion requests directly.
+email) deletes that user's private reports, follow-ups and deletion requests directly.
+
+Follow-ups (`PrivateReply`) can't be deleted by their author either. They go when the developer processes
+the deletion request: they cascade with their report (`.deleteSelf`) and are also deleted explicitly. An
+`all` request deletes every follow-up the requester created, and a per-report request deletes those on the
+named reports.
 
 **Process requests promptly.** App Store Review Guideline 5.1.1(v) requires apps that support account
 creation to let people delete their data from within the app, and privacy laws such as the GDPR set
@@ -132,6 +158,7 @@ How each record type is scoped:
 | Record type | How its app is decided |
 | --- | --- |
 | `Request`, `PrivateReport` | Its own `appID` |
+| `PrivateReply` | Its own `appID`, copied from its report when sent |
 | `Comment`, `Report`, `Follow`, `Vote` (counted, never deleted) | The `appID` of the `Request` it references |
 | `Activity`, `RequestMetadata`, `DevComment`, other people's votes and replies | Not queried; deleted by the `.deleteSelf` cascade of the scoped request |
 | `PrivateReportDeletionRequest` | Has no `appID`. A submitter files one naming this app's reports. A developer deleting per app removes only `reports` requests whose named reports were all deleted; `all` requests and ones naming other apps' reports stay in the queue |

@@ -21,6 +21,7 @@ schema itself, work in Development, export the result, review the diff, and upda
 | `Follow` | Private subscription to a request |
 | `RequestMetadata` | Private prefilling metadata |
 | `PrivateReport` | Developer-only submission, with its developer replies, optional images and optional files |
+| `PrivateReply` | A submitter's follow-up message in a private report's conversation |
 | `PrivateReportDeletionRequest` | A submitter's request that the developer delete their private reports |
 
 `Users` is CloudKit's built-in user type. Its queryable record ID is needed to configure the
@@ -40,6 +41,7 @@ Every included custom record type needs a queryable `___recordID`.
 | `Activity` | `appID`, `request`, `recipientID`, `kind` queryable; creation time sortable |
 | `RequestMetadata` | `request` queryable |
 | `PrivateReport` | creator (`___createdBy`), `appID`, `kind`, `status` queryable; `lastActivityAt` and creation time sortable |
+| `PrivateReply` | creator (`___createdBy`), `report`, `appID` queryable; creation time queryable and sortable |
 | `PrivateReportDeletionRequest` | creator (`___createdBy`), `scope` queryable; creation time sortable |
 | `Users` | `___recordID` queryable |
 
@@ -73,10 +75,16 @@ only, no control characters or leading dots), because the reader builds a tempor
   `_world` grant. The creator has no WRITE so they cannot forge developer replies or status. Developer
   replies are stored on the report (`replies`, a `LIST<STRING>` of JSON entries), because a reply record
   created by the developer would not be readable by the submitter.
+- `PrivateReply` has the same grants: `_creator` READ only (so a follow-up can't be edited once sent),
+  `_icloud` CREATE, `dev` READ, WRITE, no `_world`. Its `report` is a `.deleteSelf` reference, so a
+  conversation goes with its report. It carries only the **submitter's** messages: a record the developer
+  created would be unreadable to the submitter, so developer messages stay on the report's `replies`. A
+  follow-up is shown only if its CloudKit creator is the report's creator or a configured developer, so a
+  third party who learns a report's record name can't inject messages into it.
 - `PrivateReportDeletionRequest` has the same grants. Since the creator cannot delete a `PrivateReport`,
   they create one of these and the developer processes it. The requester is the record's CloudKit
   creator (`___createdBy`), never a field, and only reports with that same creator are deleted.
-- `SchemaVariantTests` fails if either type gains a `_world` grant or a `_creator` WRITE.
+- `SchemaVariantTests` fails if any of these types gains a `_world` grant or a `_creator` WRITE.
 - `DevComment` grants creation only to `dev`, making developer authorship unspoofable.
 - `Comment` and `Follow` grant developer writes so account deletion can remove another user's data.
 - `Vote`, `Report` and `Follow` grant their creator writes so votes can be withdrawn, follows

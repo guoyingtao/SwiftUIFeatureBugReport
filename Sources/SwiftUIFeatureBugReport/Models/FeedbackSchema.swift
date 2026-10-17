@@ -21,6 +21,10 @@ enum RecordType {
     /// Readable only by its creator and the `dev` role - no `_world` grant. See `PrivateReport`.
     static let privateReport = "PrivateReport"
 
+    /// A submitter's follow-up message on their own private report. Developer messages stay on the
+    /// report's `replies` - see `PrivateFollowUp` for why.
+    static let privateReply = "PrivateReply"
+
     /// A submitter's request that the developer delete private reports they cannot delete themselves.
     static let privateReportDeletionRequest = "PrivateReportDeletionRequest"
 }
@@ -77,6 +81,11 @@ enum FieldKey {
     /// `LIST<INT64>`, the byte size of each entry in `files`, so a list can show sizes without
     /// downloading anything.
     static let fileSizes = "fileSizes"
+
+    // PrivateReply (also reuses body, appID)
+
+    /// `PrivateReply`'s parent report, a `.deleteSelf` reference so the conversation goes with it.
+    static let report = "report"
 
     // PrivateReportDeletionRequest
     static let reportNames = "reportNames"
