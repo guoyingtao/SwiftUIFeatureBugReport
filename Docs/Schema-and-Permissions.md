@@ -20,7 +20,7 @@ schema itself, work in Development, export the result, review the diff, and upda
 | `Activity` | User update feed and push trigger |
 | `Follow` | Private subscription to a request |
 | `RequestMetadata` | Private prefilling metadata |
-| `PrivateReport` | Developer-only submission, with its developer replies and optional images |
+| `PrivateReport` | Developer-only submission, with its developer replies, optional images and optional files |
 | `PrivateReportDeletionRequest` | A submitter's request that the developer delete their private reports |
 
 `Users` is CloudKit's built-in user type. Its queryable record ID is needed to configure the
@@ -51,6 +51,20 @@ ranking.
 written only when an app sets `appID`; records without it are "unscoped". It's a display filter, not a
 security boundary: it carries no grant of its own, and a request's creator can rewrite it like any
 other field of their request.
+
+### File fields on `PrivateReport`
+
+| Field | Type | Notes |
+|---|---|---|
+| `files` | `LIST<ASSET>` | The attached files (`allowFileAttachments`). Fetched only when one is opened |
+| `fileNames` | `LIST<STRING>` | Original name with extension of each entry in `files`, same order. A `CKAsset` keeps no name, and Quick Look and Books go by the extension |
+| `fileSizes` | `LIST<INT64>` | Byte size of each entry in `files`, so lists show sizes without downloading |
+
+None of these fields needs an index. They're written only when a report has files, so a schema without
+them still accepts file-less private reports. Sending a file to a Production schema without them fails.
+The names are client-written and are sanitised when stored and again when read (last path component
+only, no control characters or leading dots), because the reader builds a temporary file path from them.
+`Request` deliberately has no file field, and `SchemaVariantTests` checks that it never gains one.
 
 ## Permission invariants
 

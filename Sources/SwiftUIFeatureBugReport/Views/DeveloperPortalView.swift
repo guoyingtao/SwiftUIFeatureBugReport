@@ -42,6 +42,9 @@ enum PortalQueue: String, CaseIterable, Hashable {
 /// version filter and the Open/Reported/Images/All queues apply to public requests, Pending/All to
 /// private ones. The Private tab's label carries the pending figure (`PrivateQueuePolicy`).
 ///
+/// In `PrivateFeedbackMode.only` there is no public queue: the switch is hidden and the portal is the
+/// private queue alone.
+///
 /// Shipping this view in every build is not a security hole: `FeedbackContainer.isDeveloper` decides
 /// whether it is *offered*, and the `dev` security role decides whether its writes are *accepted*.
 public struct DeveloperPortalView: View {
@@ -91,7 +94,7 @@ public struct DeveloperPortalView: View {
             }
             .task {
 
-                if !store.requests.hasLoadedOnce { await store.start() }
+                if !store.hasLoadedOnce { await store.start() }
 
                 // An `if` rather than the `guard` this replaced: the portal is usually reached from
                 // the board's toolbar, so the board has already loaded and a `guard` would return
@@ -234,7 +237,7 @@ public struct DeveloperPortalView: View {
                     .help("Refresh")
                 }
                 
-                if offersPrivateFeedback { segmentPicker }
+                if showsSegmentPicker { segmentPicker }
 
                 switch activeSegment {
 
@@ -378,7 +381,7 @@ public struct DeveloperPortalView: View {
 
             VStack(spacing: 0) {
 
-                if offersPrivateFeedback { segmentPicker }
+                if showsSegmentPicker { segmentPicker }
 
                 filter()
             }
@@ -565,10 +568,22 @@ public struct DeveloperPortalView: View {
     // MARK: - Segments
 
     /// The same gate the board uses for its private entries.
-    private var offersPrivateFeedback: Bool { store.configuration.privateFeedback != .disabled }
+    private var offersPrivateFeedback: Bool { store.configuration.privateFeedback.offersPrivateReports }
 
-    /// Never the Private tab while private feedback is off, whatever `segment` was left on.
-    private var activeSegment: PortalSegment { offersPrivateFeedback ? segment : .requests }
+    /// `PrivateFeedbackMode.only` has no public requests to triage, so the portal is the private queue.
+    private var offersPublicQueue: Bool { store.hasPublicBoard }
+
+    /// Public / Private only when there are both.
+    private var showsSegmentPicker: Bool { offersPrivateFeedback && offersPublicQueue }
+
+    /// Never the Private tab while private feedback is off, and never the Public one in private-only
+    /// mode, whatever `segment` was left on.
+    private var activeSegment: PortalSegment {
+
+        guard offersPublicQueue else { return .privateReports }
+
+        return offersPrivateFeedback ? segment : .requests
+    }
 
     /// The figure on the Private tab, narrowed by the shared app filter - see `PrivateQueuePolicy`.
     private var privatePendingCount: Int {
@@ -580,10 +595,11 @@ public struct DeveloperPortalView: View {
     /// selection made on one tab stays valid on the other.
     private var filterableAppIDs: [String?] {
 
-        store.requests.requests.map(\.appID)
+        (offersPublicQueue ? store.requests.requests.map(\.appID) : [])
             + (offersPrivateFeedback ? store.privateReports.allReports.map(\.appID) : [])
     }
 
+    /// `store.load()` reads nothing public in private-only mode - see `FeedbackStore.load()`.
     private static func refresh(store: FeedbackStore, includesPrivate: Bool) async {
 
         await store.load()

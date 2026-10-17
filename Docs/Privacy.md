@@ -12,6 +12,8 @@ package author receives no data and cannot access the container.
 
 - Request title and body
 - Up to three optional images
+- Optional files on private reports only (`allowFileAttachments`), such as PDFs or EPUBs, with their
+  original file names and sizes
 - Device model, OS version, app version, build and platform
 - Optional metadata supplied through `FeedbackPrefill`
 - CloudKit user record ID
@@ -35,7 +37,7 @@ public requests and contain no private metadata.
 ## Private feedback
 
 With `privateFeedback` set to `.optional` or `.bugsAndAttachments`, a submission can go to the developer
-alone. It is saved as a `PrivateReport` instead of a `Request`. The record type grants:
+alone. With `.only`, every submission does and there is no public board at all. It is saved as a `PrivateReport` instead of a `Request`. The record type grants:
 
 ```
 GRANT READ TO "_creator",
@@ -67,6 +69,16 @@ without a `_world` grant.
 Private reports carry the same device fields as requests, plus optional `FeedbackPrefill` metadata,
 and up to three images processed like public ones: downscaled, re-encoded and stripped of EXIF. They
 are never shown on the board, never voted on, and never generate `Activity` records.
+
+### Files
+
+With `allowFileAttachments`, a private report can also carry files (`files`, with `fileNames` and
+`fileSizes`), under the same grants: only the submitter and the `dev` role can read them. Files are never
+attached to a public `Request`. Unlike images they are **not** re-encoded: a PDF or EPUB is uploaded
+byte for byte, including any metadata it contains (author, annotations, DRM identifiers or personal notes
+inside a user's book file). Say so in your privacy policy if you turn this on, and treat received files
+as the user's personal content. Opened files are copied to the app's temporary directory and are cleared
+by the system. Deleting a private report deletes its files with it.
 
 ### Deleting private reports
 

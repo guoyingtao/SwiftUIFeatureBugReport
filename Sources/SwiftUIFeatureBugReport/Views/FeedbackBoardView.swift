@@ -23,13 +23,15 @@ private enum BoardDestination: Hashable, Identifiable {
 
     var id: Self { self }
 
-    var title: LocalizedStringKey {
+    /// - Parameter privateOnly: `PrivateFeedbackMode.only`, where there are no public requests and
+    ///   My data reads as such.
+    func title(privateOnly: Bool) -> LocalizedStringKey {
 
         switch self {
 
         case .roadmap: return "Roadmap"
         case .updates: return "Updates"
-        case .myData: return "My requests"
+        case .myData: return privateOnly ? "My data" : "My requests"
         case .portal: return "Developer portal"
         case .privateReports: return "My private reports"
         }
@@ -53,6 +55,9 @@ public struct FeedbackBoardView: View {
     // Selected by ID, not by value: the struct is replaced wholesale on every reload,
     // so a value-based selection would silently drop each time the board refreshes.
     @State private var selection: CKRecord.ID?
+
+    /// Private-only mode's selection on the Mac, where the detail sits beside the list.
+    @State private var privateSelection: CKRecord.ID?
 
     #if os(macOS)
     /// Non-nil while a "more" destination has replaced the board (§ BoardDestination).
@@ -88,7 +93,7 @@ public struct FeedbackBoardView: View {
         container
             .task {
 
-                if !store.requests.hasLoadedOnce { await store.start() }
+                if !store.hasLoadedOnce { await store.start() }
 
                 // For the portal entry's pending badge. Developer only - `loadAllReports` returns
                 // early for anyone else - and skipped while private feedback is off.
@@ -107,34 +112,48 @@ public struct FeedbackBoardView: View {
     /// one, so it nests cleanly inside a host that already owns a real split view.
     @ViewBuilder private var container: some View {
 
+        if store.hasPublicBoard { publicContainer }
+        else { privateOnlyContainer }
+    }
+
+#if os(macOS)
+    /// A "more" destination with a back button of this view's own (§ BoardDestination).
+    @ViewBuilder private func destinationScreen(_ destination: BoardDestination) -> some View {
+
+        VStack(spacing: 0) {
+
+            HStack(spacing: 8) {
+
+                Button(action: { self.destination = nil },
+                       label: { Label("Back", systemImage: "chevron.backward") })
+                    .buttonStyle(.borderless)
+                    .labelStyle(.iconOnly)
+                    .help("Back to the board")
+
+                Text(destination.title(privateOnly: !store.hasPublicBoard))
+                    .font(.headline)
+
+                Spacer(minLength: 8)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+
+            Divider()
+
+            destinationContent(destination)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+#endif
+
+    @ViewBuilder private var publicContainer: some View {
+
 #if os(macOS)
         // A "more" destination takes over the whole tab, with a back button of this view's own, so
         // nothing is ever pushed onto the host's navigation stack (§ BoardDestination).
         if let destination {
 
-            VStack(spacing: 0) {
-
-                HStack(spacing: 8) {
-
-                    Button(action: { self.destination = nil },
-                           label: { Label("Back", systemImage: "chevron.backward") })
-                        .buttonStyle(.borderless)
-                        .labelStyle(.iconOnly)
-                        .help("Back to the board")
-
-                    Text(destination.title)
-                        .font(.headline)
-
-                    Spacer(minLength: 8)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-
-                Divider()
-
-                destinationContent(destination)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+            destinationScreen(destination)
         }
         else {
 
@@ -531,7 +550,7 @@ public struct FeedbackBoardView: View {
     /// Gates "My private reports" here and the portal's Private tab and badge. While `.disabled` the
     /// schema may not contain `PrivateReport`, so neither the user's list nor the developer queue is
     /// offered. The developer's queue has no entry of its own - it is the portal's Private tab.
-    private var offersPrivateFeedback: Bool { store.configuration.privateFeedback != .disabled }
+    private var offersPrivateFeedback: Bool { store.configuration.privateFeedback.offersPrivateReports }
 
     /// A number, unlike the Updates dot: every pending item is something the developer has to act
     /// on, so the count is the useful part. Every app - the portal opens on all of them. See
@@ -613,11 +632,183 @@ public struct FeedbackBoardView: View {
         await loadPrivateQueueIfNeeded()
 
 #if os(macOS)
-        if let selection { await store.comments.load(for: selection) }
+        if store.hasPublicBoard, let selection { await store.comments.load(for: selection) }
 #endif
     }
 
     private func isSelected(_ request: FeedbackRequest) -> Bool { selection == request.id }
+
+    // MARK: - Private-only mode
+
+    /// `PrivateFeedbackMode.only`: no public list, roadmap, voting, comments, search or Updates. The
+    /// main screen is the user's own private reports with a prominent "New feedback" action; the
+    /// "more" menu keeps My data, and a developer keeps the portal (private queue only).
+    @ViewBuilder private var privateOnlyContainer: some View {
+
+#if os(macOS)
+        if let destination {
+
+            destinationScreen(destination)
+        }
+        else {
+
+            VStack(spacing: 0) {
+
+                privateOnlyMacHeader
+
+                Divider()
+
+                HStack(spacing: 0) {
+
+                    privateOnlyList
+                        .frame(minWidth: 280, idealWidth: 340, maxWidth: 400)
+
+                    Divider()
+
+                    Group {
+
+                        if let selected = selectedPrivateReport {
+
+                            NavigationStack { PrivateReportDetailView(store: store, report: selected, scope: .mine) }
+                                .id(selected.id)
+                        }
+                        else {
+
+                            FeedbackEmptyState(symbol: "lock",
+                                               title: "Nothing selected",
+                                               message: "Pick a report from the list.")
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .navigationTitle("Feedback")
+            .sheet(isPresented: $showingForm) { FeedbackFormView(store: store, prefill: prefill) }
+        }
+#else
+        privateOnlyList
+            .navigationTitle("Feedback")
+            .toolbar { privateOnlyToolbar }
+            .feedbackRefreshable { await refreshEverything() }
+            .sheet(isPresented: $showingForm) { FeedbackFormView(store: store, prefill: prefill) }
+#endif
+    }
+
+    @ViewBuilder private var privateOnlyList: some View {
+
+#if os(macOS)
+        PrivateReportsList(store: store, scope: .mine, listTitle: "My private reports", selection: $privateSelection) {
+
+            newFeedbackSection
+        }
+#else
+        PrivateReportsList(store: store, scope: .mine, listTitle: "My private reports") { newFeedbackSection }
+#endif
+    }
+
+    /// The prominent action at the top of the private-only list.
+    @ViewBuilder private var newFeedbackSection: some View {
+
+        Section {
+
+            Button(action: { showingForm = true }) {
+
+                Label("New feedback", systemImage: "square.and.pencil")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(!store.canWrite)
+
+        } footer: {
+
+            Text("Your feedback goes privately to the developer. Only you and the developer can see it.")
+        }
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
+    }
+
+#if os(macOS)
+    @ViewBuilder private var privateOnlyMacHeader: some View {
+
+        HStack(spacing: 10) {
+
+            Text("My private reports")
+                .font(.headline)
+
+            Spacer(minLength: 8)
+
+            Button(action: { Task { await refreshEverything() } }) { Image(systemName: "arrow.clockwise") }
+                .help("Refresh")
+
+            if store.container.isDeveloper {
+
+                Button(action: { destination = .portal }) {
+
+                    BadgedSymbol(systemName: "hammer", count: portalPendingCount)
+                }
+                .help("Developer portal")
+                .accessibilityLabel(portalAccessibilityLabel)
+            }
+
+            Menu {
+
+                Button(action: { destination = .myData },
+                       label: { Label("My data", systemImage: "person.crop.circle") })
+
+            } label: { Image(systemName: "ellipsis.circle") }
+                .menuIndicator(.hidden)
+                .fixedSize()
+
+            Button(action: { showingForm = true }) { Image(systemName: "plus") }
+                .disabled(!store.canWrite)
+                .help("New feedback")
+        }
+        .buttonStyle(.borderless)
+        .padding(12)
+    }
+
+    private var selectedPrivateReport: PrivateReport? {
+
+        guard let privateSelection else { return nil }
+
+        return store.privateReports.myReports.first { $0.id == privateSelection }
+    }
+#else
+    @ToolbarContentBuilder private var privateOnlyToolbar: some ToolbarContent {
+
+        if store.container.isDeveloper {
+
+            ToolbarItem(placement: toolbarTrailingPlacement) {
+
+                NavigationLink { DeveloperPortalView(store: store, embedsNavigationStack: false) }
+                    label: {
+
+                        Label { Text("Developer portal") }
+                            icon: { BadgedSymbol(systemName: "hammer", count: portalPendingCount) }
+                    }
+                    .accessibilityLabel(portalAccessibilityLabel)
+            }
+        }
+
+        ToolbarItem(placement: toolbarTrailingPlacement) {
+
+            Menu {
+
+                NavigationLink { MyDataView(store: store, embedsNavigationStack: false) }
+                    label: { Label("My data", systemImage: "person.crop.circle") }
+
+            } label: { Label("More", systemImage: "ellipsis.circle") }
+        }
+
+        ToolbarItem(placement: toolbarTrailingPlacement) {
+
+            Button(action: { showingForm = true },
+                   label: { Label("New feedback", systemImage: "plus") })
+                .disabled(!store.canWrite)
+        }
+    }
+#endif
 
     private var selectedRequest: FeedbackRequest? {
 

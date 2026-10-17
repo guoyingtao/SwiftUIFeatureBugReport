@@ -140,7 +140,7 @@ FeedbackConfiguration(
     reportThreshold: 3,
     allowComments: true,          // use Schema.ckdb
     allowImageAttachments: true,
-    privateFeedback: .disabled    // .optional or .bugsAndAttachments once PrivateReport is deployed
+    privateFeedback: .disabled    // .optional, .bugsAndAttachments or .only once PrivateReport is deployed
 )
 ```
 
@@ -166,6 +166,51 @@ Replying or changing the status takes a report out of the count. The board's fig
 the Private tab's follows the app filter, except that deletion requests have no app and always count.
 The rule is `PrivateQueuePolicy`. The Pending filter lists exactly the reports it counts.
 Leave it `.disabled` until `PrivateReport` is deployed. See [Privacy](Docs/Privacy.md#private-feedback).
+
+#### Private-only mode
+
+`privateFeedback: .only` turns the package into a private support inbox, with no public board at all:
+
+- `FeedbackBoardView`'s main screen is the user's own private reports ("My private reports") with a
+  prominent **New feedback** button. There is no public list, roadmap, voting, comments, search of
+  public requests or Updates feed, and nothing public is queried or subscribed to.
+- The form has no public/private toggle; every submission is a `PrivateReport`.
+- The "more" menu keeps **My data**, which still counts and deletes everything the user has stored
+  (including any public data from before the switch) and still files the private deletion request.
+- The developer portal shows the private queue only, with no Public / Private switch.
+
+Every other mode behaves exactly as before. In `.only` mode don't embed `RoadmapView`, `UpdatesView`
+or `RequestDetailView` yourself; they are public-board screens. The public record types can stay in
+the schema; they are simply unused.
+
+#### File attachments on private reports
+
+Private reports can carry files: PDFs, EPUBs and other documents, for example the book that won't
+open in a reader app.
+
+```swift
+FeedbackConfiguration(
+    containerIdentifier: "iCloud.com.newbee.beereader",
+    developerUserRecordIDs: ["_abc123…"],
+    privateFeedback: .only,                        // or .optional / .bugsAndAttachments
+    allowFileAttachments: true,                    // default false
+    maxFileAttachmentBytes: 20 * 1024 * 1024,      // per file, default 20 MB
+    maxFileAttachments: 3,                         // per report, default 3
+    allowedFileTypes: [.pdf, .epub, .plainText]    // default: .pdf, .epub, .plainText, .zip; [.item] = anything
+)
+```
+
+- Only effective while `privateFeedback` is not `.disabled` (`fileAttachmentsAvailable`). Files are
+  stored on `PrivateReport` only. `Request` has no file field, and the public submit path takes none.
+- The form shows **Attach file** (`.fileImporter`; Files on iOS, an open panel on the Mac). Each file
+  is listed with its name and size and a remove button. Size, type and count are checked, with
+  localisable errors. In `.optional` and `.bugsAndAttachments` modes, attaching a file **forces the
+  submission private**: the toggle locks on and its footer says why.
+- In both the user's own report and the portal, files show as rows with an icon, name and size.
+  Tapping one downloads only that file, saves it under its original name and opens it in Quick Look.
+  A share button then exports it to Files, Books and so on.
+- This needs the `files`, `fileNames` and `fileSizes` fields on `PrivateReport`. Import the updated
+  schema before turning it on. See [Schema and permissions](Docs/Schema-and-Permissions.md).
 
 ### Several apps, one container
 

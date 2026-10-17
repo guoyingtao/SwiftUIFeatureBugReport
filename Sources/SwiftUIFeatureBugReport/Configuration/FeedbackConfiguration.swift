@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import UniformTypeIdentifiers
 
 /// Everything the package needs from the integrating app.
 ///
@@ -52,6 +53,37 @@ public struct FeedbackConfiguration: Sendable {
     /// deployed before this option existed will not have. Deploy the schema first, then turn it on.
     public let privateFeedback: PrivateFeedbackMode
 
+    /// Whether users may attach files - PDFs, EPUBs and other documents - to a **private** report.
+    ///
+    /// Only effective while `privateFeedback` is not `.disabled`: files are stored on `PrivateReport`
+    /// only, never on a public `Request`, and attaching one makes the submission private. Defaults to
+    /// `false` because it needs the `files`, `fileNames` and `fileSizes` fields on `PrivateReport`; a
+    /// schema deployed before this option existed will not have them. See `fileAttachmentsAvailable`.
+    public let allowFileAttachments: Bool
+
+    /// The largest single file accepted, in bytes. Defaults to 20 MB. Files count against the
+    /// container's public-database asset storage.
+    public let maxFileAttachmentBytes: Int
+
+    /// How many files one report may carry. Defaults to 3.
+    public let maxFileAttachments: Int
+
+    /// The content types the file picker offers and the form accepts. A picked file must conform to
+    /// one of them. Defaults to `defaultAllowedFileTypes`; pass `[.item]` to accept anything.
+    public let allowedFileTypes: [UTType]
+
+    /// PDF, EPUB, plain text and ZIP.
+    public static let defaultAllowedFileTypes: [UTType] = [.pdf, .epub, .plainText, .zip]
+
+    /// `allowFileAttachments`, gated on private feedback being available at all.
+    public var fileAttachmentsAvailable: Bool { allowFileAttachments && privateFeedback.offersPrivateReports }
+
+    /// The limits the form and `PrivateReportService` both validate against.
+    public var fileAttachmentRules: FileAttachmentRules {
+
+        FileAttachmentRules(maxBytes: maxFileAttachmentBytes, maxCount: maxFileAttachments, allowedTypes: allowedFileTypes)
+    }
+
     /// Identifies this app when several apps share one container, e.g. `"BeeDay"`.
     ///
     /// When set, new requests, private reports and activity are stamped with it, and the board, the
@@ -79,7 +111,11 @@ public struct FeedbackConfiguration: Sendable {
                 allowImageAttachments: Bool = true,
                 privateFeedback: PrivateFeedbackMode = .disabled,
                 appID: String? = nil,
-                includeUnscopedRecords: Bool = false) {
+                includeUnscopedRecords: Bool = false,
+                allowFileAttachments: Bool = false,
+                maxFileAttachmentBytes: Int = 20 * 1024 * 1024,
+                maxFileAttachments: Int = 3,
+                allowedFileTypes: [UTType] = FeedbackConfiguration.defaultAllowedFileTypes) {
 
         self.containerIdentifier = containerIdentifier
         self.developerUserRecordIDs = developerUserRecordIDs
@@ -89,6 +125,10 @@ public struct FeedbackConfiguration: Sendable {
         self.privateFeedback = privateFeedback
         self.appID = AppScope.normalized(appID)
         self.includeUnscopedRecords = includeUnscopedRecords
+        self.allowFileAttachments = allowFileAttachments
+        self.maxFileAttachmentBytes = max(1, maxFileAttachmentBytes)
+        self.maxFileAttachments = max(1, maxFileAttachments)
+        self.allowedFileTypes = allowedFileTypes.isEmpty ? FeedbackConfiguration.defaultAllowedFileTypes : allowedFileTypes
     }
 
 }

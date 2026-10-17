@@ -82,6 +82,14 @@ import Observation
 
     public var canWrite: Bool { container.canWrite }
 
+    /// `false` in `PrivateFeedbackMode.only`: no public requests, votes, comments, roadmap or Updates
+    /// are loaded, queried or subscribed to.
+    public var hasPublicBoard: Bool { configuration.privateFeedback.hasPublicBoard }
+
+    /// Whether the board's main list has loaded for this identity - the public board, or in
+    /// private-only mode the user's own private reports.
+    public var hasLoadedOnce: Bool { hasPublicBoard ? requests.hasLoadedOnce : privateReports.hasLoadedMine }
+
     // MARK: - Loading
 
     public func start() async {
@@ -93,7 +101,7 @@ import Observation
             // Startup has run, but its load may not have landed - a transient failure, or the
             // `.CKAccountChanged` handler resetting `requests` after it. Read again rather than leaving
             // the board empty until someone pulls to refresh.
-            if !requests.hasLoadedOnce { await load() }
+            if !hasLoadedOnce { await load() }
 
             return
         }
@@ -121,7 +129,9 @@ import Observation
         await container.resolveIdentity()
         await load()
 
-        if container.identityState == .ready {
+        // Every subscription below is about public records - activity on requests, new requests, new
+        // comments - none of which exist in private-only mode.
+        if container.identityState == .ready && hasPublicBoard {
 
             await activity.registerForRemoteNotificationsIfAuthorized()
             await activity.registerSubscriptions()
@@ -142,7 +152,8 @@ import Observation
     /// status is `.notDetermined`, so a developer who has already answered is never re-asked.
     public func askForDeveloperNotificationsIfNeeded() async {
 
-        guard container.isDeveloper, !hasAskedForNotifications else { return }
+        // Both developer pushes are about public records, which private-only mode has none of.
+        guard container.isDeveloper, hasPublicBoard, !hasAskedForNotifications else { return }
 
         hasAskedForNotifications = true
 
@@ -157,6 +168,13 @@ import Observation
     }
 
     public func load() async {
+
+        // Private-only: the main list is the user's own private reports; nothing public is queried.
+        guard hasPublicBoard else {
+
+            await privateReports.loadMine()
+            return
+        }
 
         await requests.loadBoard()
 

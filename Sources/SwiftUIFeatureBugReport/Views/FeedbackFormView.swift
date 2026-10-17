@@ -20,6 +20,9 @@ public struct FeedbackFormView: View {
     @State private var body_: String
     @State private var imageData: [Data] = []
 
+    /// Files copied out of the picker's security scope - see `FileAttachmentPicker`. Private only.
+    @State private var files: [PendingFileAttachment] = []
+
     /// The user's own choice. Whether the submission is actually private also depends on the mode -
     /// see `isPrivate`.
     @State private var privateChoice = false
@@ -85,7 +88,7 @@ public struct FeedbackFormView: View {
 
     private var isPrivateForced: Bool {
 
-        PrivateFeedbackPolicy.isForced(mode: privateMode, type: type, hasAttachments: !imageData.isEmpty)
+        PrivateFeedbackPolicy.isForced(mode: privateMode, type: type, hasAttachments: !imageData.isEmpty, hasFiles: !files.isEmpty)
     }
 
     private var isPrivate: Bool {
@@ -93,7 +96,19 @@ public struct FeedbackFormView: View {
         PrivateFeedbackPolicy.isPrivate(mode: privateMode,
                                         type: type,
                                         hasAttachments: !imageData.isEmpty,
+                                        hasFiles: !files.isEmpty,
                                         userChoice: privateChoice)
+    }
+
+    private var forcedReason: PrivateFeedbackPolicy.ForcedReason? {
+
+        PrivateFeedbackPolicy.forcedReason(mode: privateMode, type: type, hasAttachments: !imageData.isEmpty, hasFiles: !files.isEmpty)
+    }
+
+    /// Offered whenever files are on and private reports exist; attaching one forces private.
+    private var allowsFiles: Bool {
+
+        PrivateFeedbackPolicy.allowsFiles(fileAttachmentsEnabled: store.configuration.allowFileAttachments, mode: privateMode)
     }
 
     private var allowsImages: Bool {
@@ -154,10 +169,26 @@ public struct FeedbackFormView: View {
             } header: { Text("Details") }
 
             if PrivateFeedbackPolicy.offersToggle(mode: privateMode) { privateSection }
+            else if privateMode == .only { privateOnlyNotice }
 
             if allowsImages {
 
                 Section { ImageAttachmentPicker(imageData: $imageData) }
+            }
+
+            if allowsFiles {
+
+                Section {
+
+                    FileAttachmentPicker(files: $files, rules: store.configuration.fileAttachmentRules)
+
+                } footer: {
+
+                    if privateMode != .only && files.isEmpty && !isPrivate {
+
+                        Text("Files are only ever sent privately. Attaching one makes this feedback private.")
+                    }
+                }
             }
 
             Section {
@@ -293,7 +324,11 @@ public struct FeedbackFormView: View {
 
         } footer: {
 
-            if isPrivateForced {
+            if forcedReason == .files {
+
+                Text("Feedback with a file attached is always sent privately. Remove the file to post publicly.")
+            }
+            else if isPrivateForced {
 
                 Text("Bug reports and anything with an image are always sent privately. Only you and the developer can see them.")
             }
@@ -306,6 +341,16 @@ public struct FeedbackFormView: View {
                 Text("Public feedback is visible to everyone using the app.")
             }
         }
+    }
+
+    /// Private-only mode: nothing to choose, so a plain statement instead of the toggle.
+    @ViewBuilder private var privateOnlyNotice: some View {
+
+        Section {
+
+            Label("Sent privately to the developer", systemImage: "lock")
+
+        } footer: { Text("Only you and the developer can see your feedback.") }
     }
 
     // MARK: - Search before submit
@@ -355,6 +400,9 @@ public struct FeedbackFormView: View {
     private func scheduleSearch(for text: String) {
 
         searchTask?.cancel()
+
+        // Private-only mode has no public requests to find, and must not query them.
+        guard store.hasPublicBoard else { return }
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -420,6 +468,7 @@ public struct FeedbackFormView: View {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedBody = body_.trimmingCharacters(in: .whitespacesAndNewlines)
         let images = imageData
+        let attachedFiles = sendPrivately ? files : []
         let attachedMetadata = includeMetadata ? metadata : [:]
 
         Task {
@@ -432,7 +481,12 @@ public struct FeedbackFormView: View {
                                                               body: trimmedBody,
                                                               kind: kind,
                                                               imageData: images,
+                                                              files: attachedFiles,
                                                               metadata: attachedMetadata)
+
+                    // Uploaded; the temporary copies have done their job.
+                    attachedFiles.forEach { $0.discard() }
+                    files = []
                 }
                 else {
 

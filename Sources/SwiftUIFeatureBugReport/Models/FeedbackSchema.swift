@@ -66,6 +66,18 @@ enum FieldKey {
     // PrivateReport (also reuses title, body, kind, status, images, creatorID, device fields, payload)
     static let replies = "replies"
 
+    /// `LIST<ASSET>` of attached files - PDFs, EPUBs, other documents. `PrivateReport` only; a public
+    /// `Request` has no such field.
+    static let files = "files"
+
+    /// `LIST<STRING>`, the original name (with extension) of each entry in `files`, in the same order.
+    /// A `CKAsset` keeps no file name, and Quick Look and Books go by the extension.
+    static let fileNames = "fileNames"
+
+    /// `LIST<INT64>`, the byte size of each entry in `files`, so a list can show sizes without
+    /// downloading anything.
+    static let fileSizes = "fileSizes"
+
     // PrivateReportDeletionRequest
     static let reportNames = "reportNames"
     static let scope = "scope"

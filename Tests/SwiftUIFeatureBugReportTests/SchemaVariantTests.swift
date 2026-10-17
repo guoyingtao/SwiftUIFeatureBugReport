@@ -105,4 +105,24 @@ struct SchemaVariantTests {
             #expect(block.contains("GRANT READ, WRITE TO dev"))
         }
     }
+
+    /// Files ride on `PrivateReport` only. A file field on the world-readable `Request` would put a
+    /// user's documents on the public board.
+    @Test("PrivateReport has the file fields and Request has none, in both variants")
+    func fileFields() throws {
+
+        for name in ["Schema.ckdb", "Schema-NoComments.ckdb"] {
+
+            let contents = try schema(named: name)
+            let privateBlock = try grants(of: "PrivateReport", in: contents)
+            let requestBlock = try grants(of: "Request", in: contents)
+
+            #expect(privateBlock.range(of: #"\bfiles\s+LIST<ASSET>"#, options: .regularExpression) != nil, "\(name)")
+            #expect(privateBlock.range(of: #"\bfileNames\s+LIST<STRING>"#, options: .regularExpression) != nil, "\(name)")
+            #expect(privateBlock.range(of: #"\bfileSizes\s+LIST<INT64>"#, options: .regularExpression) != nil, "\(name)")
+
+            #expect(!requestBlock.contains("files"), "\(name)")
+            #expect(!requestBlock.contains("fileNames"), "\(name)")
+        }
+    }
 }

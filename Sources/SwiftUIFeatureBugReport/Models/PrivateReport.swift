@@ -38,6 +38,10 @@ public struct PrivateReport: Identifiable, Sendable, Hashable {
     /// Populated only by `PrivateReportService.loadDetail(_:)`, the one place that fetches the assets.
     public var imageURLs: [URL] = []
 
+    /// Attached files, by name and size. Their bytes are fetched only when one is opened - see
+    /// `PrivateReportService.downloadFile(_:of:)`.
+    public var files: [PrivateFile] = []
+
     /// Memberwise, for tests.
     init(id: CKRecord.ID,
          title: String = "",
@@ -47,6 +51,7 @@ public struct PrivateReport: Identifiable, Sendable, Hashable {
          creatorID: String = "",
          appID: String? = nil,
          replies: [PrivateReply] = [],
+         files: [PrivateFile] = [],
          createdAt: Date = Date()) {
 
         self.id = id
@@ -58,6 +63,7 @@ public struct PrivateReport: Identifiable, Sendable, Hashable {
         self.appID = AppScope.normalized(appID)
         self.environment = DeviceEnvironment(appVersion: "", buildNumber: "", osVersion: "", deviceModel: "", platform: "")
         self.replies = replies
+        self.files = files
         self.lastActivityAt = createdAt
         self.createdAt = createdAt
         self.metadata = [:]
@@ -108,6 +114,8 @@ public struct PrivateReport: Identifiable, Sendable, Hashable {
             self.metadata = [:]
         }
 
+        self.files = Self.files(in: record)
+
         self.environment = DeviceEnvironment(
             appVersion: record[FieldKey.appVersion] as? String ?? "",
             buildNumber: record[FieldKey.buildNumber] as? String ?? "",
@@ -117,16 +125,35 @@ public struct PrivateReport: Identifiable, Sendable, Hashable {
         )
     }
 
-    /// The keys a list query asks for - everything except `images`.
+    /// The file list of a record. When the `files` assets were fetched their count decides how many
+    /// entries there are; otherwise - a list query - the names do.
+    static func files(in record: CKRecord) -> [PrivateFile] {
+
+        let names = record[FieldKey.fileNames] as? [String] ?? []
+        let sizes = (record[FieldKey.fileSizes] as? [NSNumber])?.map(\.int64Value) ?? []
+        let assetCount = (record[FieldKey.files] as? [CKAsset])?.count
+
+        return PrivateFile.list(names: names, sizes: sizes, assetCount: assetCount)
+    }
+
+    /// The keys a list query asks for - everything except the `images` and `files` assets.
+    ///
+    /// Asking for a key the schema does not have is harmless, so an older schema without the file
+    /// fields still answers.
     static var listDesiredKeys: [String] {
 
         [
             FieldKey.title, FieldKey.body, FieldKey.kind, FieldKey.status, FieldKey.creatorID,
             FieldKey.replies, FieldKey.lastActivityAt, FieldKey.payload,
             FieldKey.appVersion, FieldKey.buildNumber, FieldKey.osVersion,
-            FieldKey.deviceModel, FieldKey.platform, FieldKey.appID
+            FieldKey.deviceModel, FieldKey.platform, FieldKey.appID,
+            FieldKey.fileNames, FieldKey.fileSizes
         ]
     }
+
+    /// The keys the detail view asks for: the list keys plus the images. Files stay out - they can be
+    /// tens of megabytes and are fetched only when opened.
+    static var detailDesiredKeys: [String] { listDesiredKeys + [FieldKey.images] }
 }
 
 

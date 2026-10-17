@@ -128,7 +128,7 @@ public struct MyDataView: View {
             }
         }
         .formStyle(.grouped)
-        .ownedNavigationTitle("My requests", ownsStack: embedsNavigationStack)
+        .ownedNavigationTitle(store.hasPublicBoard ? "My requests" : "My data", ownsStack: embedsNavigationStack)
         .inlineNavigationTitle()
         .task {
 
@@ -179,7 +179,7 @@ public struct MyDataView: View {
 
     private var showsPrivateReports: Bool {
 
-        store.configuration.privateFeedback != .disabled || store.accountData.counts.privateReports > 0
+        store.configuration.privateFeedback.offersPrivateReports || store.accountData.counts.privateReports > 0
     }
 
     @ViewBuilder private var blockedSection: some View {

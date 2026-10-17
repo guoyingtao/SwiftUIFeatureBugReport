@@ -105,6 +105,10 @@ struct PrivateReportsList<Header: View>: View {
     let searchText: String
     let selection: Binding<CKRecord.ID?>?
 
+    /// The reports section's header for `.mine` - private-only mode's board titles it. `.all` always
+    /// shows the count instead.
+    let listTitle: LocalizedStringKey?
+
     let header: () -> Header
 
     /// The deletion request the confirmation dialog is asking about.
@@ -116,6 +120,7 @@ struct PrivateReportsList<Header: View>: View {
          appFilter: AppFilter = .all,
          filter: PrivateQueueFilter = .all,
          searchText: String = "",
+         listTitle: LocalizedStringKey? = nil,
          selection: Binding<CKRecord.ID?>? = nil,
          @ViewBuilder header: @escaping () -> Header) {
 
@@ -125,6 +130,7 @@ struct PrivateReportsList<Header: View>: View {
         self.filter = filter
         self.searchText = searchText
         self.selection = selection
+        self.listTitle = listTitle
         self.header = header
     }
 
@@ -212,6 +218,7 @@ struct PrivateReportsList<Header: View>: View {
                 } header: {
 
                     if scope == .all { Text("^[\(reports.count) report](inflect: true)") }
+                    else if let listTitle { Text(listTitle) }
                 }
             }
 
@@ -234,8 +241,8 @@ struct PrivateReportsList<Header: View>: View {
 
             switch request.scope {
 
-            case .all: Text("Every private report this person has sent is deleted, with its images and replies. This can't be undone.")
-            case .reports: Text("The requested reports are deleted, with their images and replies. This can't be undone.")
+            case .all: Text("Every private report this person has sent is deleted, with its images, files and replies. This can't be undone.")
+            case .reports: Text("The requested reports are deleted, with their images, files and replies. This can't be undone.")
             }
         }
     }
@@ -371,10 +378,11 @@ extension PrivateReportsList where Header == EmptyView {
          appFilter: AppFilter = .all,
          filter: PrivateQueueFilter = .all,
          searchText: String = "",
+         listTitle: LocalizedStringKey? = nil,
          selection: Binding<CKRecord.ID?>? = nil) {
 
         self.init(store: store, scope: scope, appFilter: appFilter, filter: filter,
-                  searchText: searchText, selection: selection, header: { EmptyView() })
+                  searchText: searchText, listTitle: listTitle, selection: selection, header: { EmptyView() })
     }
 }
 
@@ -405,6 +413,13 @@ struct PrivateReportRow: View {
                 if !report.replies.isEmpty {
 
                     Label("^[\(report.replies.count) reply](inflect: true)", systemImage: "bubble.left")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !report.files.isEmpty {
+
+                    Label("^[\(report.files.count) file](inflect: true)", systemImage: "paperclip")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -542,6 +557,8 @@ struct PrivateReportDetailView: View {
             Section { ImageGallery(urls: report.imageURLs) }
         }
 
+        if !report.files.isEmpty { PrivateFileList(store: store, report: report) }
+
         Section {
 
             if report.replies.isEmpty {
@@ -616,7 +633,7 @@ struct PrivateReportDetailView: View {
 
               Button("Cancel", role: .cancel) { }
 
-          } message: { Text("The report, its images and replies will be deleted once the developer processes your request.") }
+          } message: { Text("The report, its images, files and replies will be deleted once the developer processes your request.") }
     }
 
     private func requestDeletion() {

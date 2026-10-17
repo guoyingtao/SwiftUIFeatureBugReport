@@ -24,6 +24,10 @@ import Observation
     public private(set) var pendingDeletionRequests: [PrivateDeletionRequest] = []
 
     public private(set) var isLoading = false
+
+    /// Whether `loadMine()` has produced a list for the current identity. Private-only mode's board
+    /// uses this the way the public board uses `RequestService.hasLoadedOnce`.
+    public private(set) var hasLoadedMine = false
     public var error: FeedbackError?
 
     private let container: FeedbackContainer
@@ -46,6 +50,7 @@ import Observation
 
         generation += 1
         isLoading = false
+        hasLoadedMine = false
         myReports = []
         allReports = []
         myDeletionRequests = []
@@ -89,7 +94,11 @@ import Observation
         let predicate = scope.predicate(NSPredicate(format: "creatorUserRecordID == %@", reference))
         let started = generation
 
-        if let loaded = await loadAll(matching: predicate), started == generation { myReports = loaded.filter { scope.includes($0.appID) } }
+        if let loaded = await loadAll(matching: predicate), started == generation {
+
+            myReports = loaded.filter { scope.includes($0.appID) }
+            hasLoadedMine = true
+        }
 
         await loadMyDeletionRequests()
     }
@@ -199,14 +208,15 @@ import Observation
         await loadPendingDeletionRequests()
     }
 
-    /// Fetches the full record including its images. The **only** place the assets are fetched.
+    /// Fetches the full record including its images. The **only** place the image assets are fetched.
+    /// File assets are not - they can be large, and are fetched one at a time by `downloadFile`.
     public func loadDetail(_ report: PrivateReport) async -> PrivateReport {
 
         let started = generation
 
         do {
 
-            let record = try await database.record(for: report.id)
+            let record = try await fetchRecord(report.id, desiredKeys: PrivateReport.detailDesiredKeys)
 
             guard started == generation else { return report }
 
@@ -236,6 +246,74 @@ import Observation
 
             return report
         }
+    }
+
+    /// Downloads one attached file and copies it to a temporary file under its original name, so Quick
+    /// Look, the share sheet and Books see the right name and type.
+    ///
+    /// Each call fetches only the `files` field. Throws `FileAttachmentError.missing` when the report no
+    /// longer has an asset at that position.
+    public func downloadFile(_ file: PrivateFile, of report: PrivateReport) async throws -> URL {
+
+        let record: CKRecord
+
+        do {
+
+            record = try await fetchRecord(report.id, desiredKeys: [FieldKey.files])
+        }
+        catch {
+
+            if CloudKitErrorHandler.isRecordMissing(error) { throw FileAttachmentError.missing(name: file.name) }
+
+            throw CloudKitErrorHandler.classify(error)
+        }
+
+        let assets = record[FieldKey.files] as? [CKAsset] ?? []
+
+        guard file.index < assets.count, let source = assets[file.index].fileURL else {
+
+            throw FileAttachmentError.missing(name: file.name)
+        }
+
+        return try Self.copyOut(source, named: file.name, reportName: report.id.recordName, index: file.index)
+    }
+
+    /// `CKAsset.fileURL` is only valid while the operation that produced it lives, so it is copied out
+    /// at once - see `FeedbackImage.copyOut`. The name is sanitised again here: it came from the record,
+    /// which its creator wrote.
+    nonisolated static func copyOut(_ source: URL, named name: String, reportName: String, index: Int) throws -> URL {
+
+        let safeReport = FileAttachmentName.sanitized(reportName, fallback: "report")
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FeedbackFiles", isDirectory: true)
+            .appendingPathComponent("\(safeReport)-\(index)", isDirectory: true)
+
+        let destination = directory.appendingPathComponent(FileAttachmentName.sanitized(name))
+
+        do {
+
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+            if FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.removeItem(at: destination) }
+
+            try FileManager.default.copyItem(at: source, to: destination)
+        }
+        catch {
+
+            throw FileAttachmentError.unreadable(name: name)
+        }
+
+        return destination
+    }
+
+    /// One record with only `desiredKeys`. A missing record throws CloudKit's own error.
+    private func fetchRecord(_ id: CKRecord.ID, desiredKeys: [String]) async throws -> CKRecord {
+
+        let results = try await database.records(for: [id], desiredKeys: desiredKeys)
+
+        guard let result = results[id] else { throw CKError(.unknownItem) }
+
+        return try result.get()
     }
 
     /// Follows the query cursor to the end, like `VoteService.loadTallies()`.
@@ -306,13 +384,30 @@ import Observation
     /// Saves a private report. Images go through the same `FeedbackImage` pipeline as public ones -
     /// downscaled, re-encoded, EXIF stripped - and are always accepted here, whatever
     /// `allowImageAttachments` says, because nobody but the developer can read them.
+    ///
+    /// `files` are checked again here against `FeedbackConfiguration.fileAttachmentRules`, whatever the
+    /// form allowed, and refused outright unless `fileAttachmentsAvailable`. The three file fields are
+    /// written only when there are files, so a schema without them keeps accepting file-less reports.
     public func submit(title: String,
                        body: String,
                        kind: FeedbackType,
                        imageData: [Data],
+                       files: [PendingFileAttachment] = [],
                        metadata: [String: String]) async throws -> PrivateReport {
 
         guard let creatorID = container.currentUserRecordID else { throw FeedbackError.notSignedIn }
+
+        if !files.isEmpty {
+
+            let configuration = container.configuration
+
+            guard configuration.fileAttachmentsAvailable else { throw FileAttachmentError.notAllowed }
+
+            if let invalid = configuration.fileAttachmentRules.validate(files.map { (name: $0.name, byteCount: $0.byteCount) }) {
+
+                throw invalid
+            }
+        }
 
         let started = generation
 
@@ -343,6 +438,13 @@ import Observation
         if !imageData.isEmpty {
 
             seeded[FieldKey.images] = try FeedbackImage.prepareForUpload(imageData).map { CKAsset(fileURL: $0) }
+        }
+
+        if !files.isEmpty {
+
+            seeded[FieldKey.files] = files.map { CKAsset(fileURL: $0.url) }
+            seeded[FieldKey.fileNames] = files.map { FileAttachmentName.sanitized($0.name) }
+            seeded[FieldKey.fileSizes] = files.map { NSNumber(value: Int64($0.byteCount)) }
         }
 
         do {
@@ -411,7 +513,9 @@ import Observation
 
         do {
 
-            let record = try await database.record(for: report.id)
+            // Everything but the assets: the save sends changed keys only, so leaving them out loses
+            // nothing, and a reply no longer downloads every attached file first.
+            let record = try await fetchRecord(report.id, desiredKeys: PrivateReport.listDesiredKeys)
 
             // Never written by a developer, so `replies` and `status` are whatever the creator put there
             // at creation. Discard them before the first developer write makes them look trusted.
