@@ -80,7 +80,7 @@ the developer instead, by creating a `PrivateReportDeletionRequest` (same grants
   only: the request names them (`scope: reports`) instead of asking for `all`. The screen then shows "Deletion requested".
 
 Reports covered by a pending request are marked in "My private reports". The developer sees pending
-requests at the top of the "Private reports" queue and deletes the reports and the request with one
+requests at the top of the developer portal's Private tab, and in its pending count, and deletes the reports and the request with one
 button. Only reports **created by the requesting account** are deleted, checked against each record's
 CloudKit creator. A request that names someone else's report deletes nothing.
 

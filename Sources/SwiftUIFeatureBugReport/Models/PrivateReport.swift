@@ -38,6 +38,31 @@ public struct PrivateReport: Identifiable, Sendable, Hashable {
     /// Populated only by `PrivateReportService.loadDetail(_:)`, the one place that fetches the assets.
     public var imageURLs: [URL] = []
 
+    /// Memberwise, for tests.
+    init(id: CKRecord.ID,
+         title: String = "",
+         body: String = "",
+         kind: FeedbackType = .bug,
+         status: RequestStatus = .open,
+         creatorID: String = "",
+         appID: String? = nil,
+         replies: [PrivateReply] = [],
+         createdAt: Date = Date()) {
+
+        self.id = id
+        self.title = title
+        self.body = body
+        self.kind = kind
+        self.status = status
+        self.creatorID = creatorID
+        self.appID = AppScope.normalized(appID)
+        self.environment = DeviceEnvironment(appVersion: "", buildNumber: "", osVersion: "", deviceModel: "", platform: "")
+        self.replies = replies
+        self.lastActivityAt = createdAt
+        self.createdAt = createdAt
+        self.metadata = [:]
+    }
+
     /// Maps a record, trusting `replies` and `status` only if a developer wrote them - see
     /// `PrivateReportTrust`.
     public init?(record: CKRecord, developerUserRecordIDs: [String], currentUserRecordID: String?) {

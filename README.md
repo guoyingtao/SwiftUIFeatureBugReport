@@ -148,11 +148,23 @@ Set `allowComments: false` when using `Schema-NoComments.ckdb`.
 
 `privateFeedback` adds a "Private (only visible to developer)" toggle to the form. Private submissions
 are saved as `PrivateReport` records that only the submitter and the `dev` role can read, enforced by
-CloudKit. Users find them under "My private reports" in the board's "more" menu, and developers get a
-"Private reports" queue there too. With `.bugsAndAttachments`, bug reports and anything with an image
-are always private. Private submissions can carry images even with `allowImageAttachments: false`.
+CloudKit. Users find them under "My private reports" in the board's "more" menu. Developers find them in
+the developer portal, which gains a **Public / Private** switch at the top. The Private tab is the private
+reports queue, with a Pending/All filter, and shares the portal's app filter and search. With
+`.bugsAndAttachments`, bug reports and anything with an image are always private. Private submissions can
+carry images even with `allowImageAttachments: false`.
 Submitters can read but not edit or delete private reports. They ask the developer to delete them,
-and the developer handles those requests in the "Private reports" queue.
+and the developer handles those requests at the top of the portal's Private tab.
+
+The Private tab's title and the portal button on the board show a **pending count**:
+
+- private reports whose status is still Open **and** that have no developer reply yet, not counting one
+  already covered by a deletion request from its own sender (that request is what you act on), plus
+- every unprocessed deletion request (processing deletes the request, so all that remain are pending).
+
+Replying or changing the status takes a report out of the count. The board's figure covers every app;
+the Private tab's follows the app filter, except that deletion requests have no app and always count.
+The rule is `PrivateQueuePolicy`. The Pending filter lists exactly the reports it counts.
 Leave it `.disabled` until `PrivateReport` is deployed. See [Privacy](Docs/Privacy.md#private-feedback).
 
 ### Several apps, one container
@@ -168,8 +180,8 @@ FeedbackConfiguration(
 ```
 
 With `appID` set, new requests, private reports and activity are stamped with it. The board, roadmap,
-search, Updates and "My private reports" then show only that app's records. The developer portal and the
-"Private reports" queue still show every app, with an app badge on each row and an app filter. `appID: nil`,
+search, Updates and "My private reports" then show only that app's records. The developer portal, Public and
+Private tabs alike, still shows every app, with an app badge on each row and an app filter. `appID: nil`,
 the default, writes nothing and shows everything, exactly as before.
 
 Records written before `appID` was set have none, and nobody can tell which app they came from. By default

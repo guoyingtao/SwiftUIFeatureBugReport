@@ -20,7 +20,6 @@ private enum BoardDestination: Hashable, Identifiable {
     case myData
     case portal
     case privateReports
-    case privatePortal
 
     var id: Self { self }
 
@@ -33,7 +32,6 @@ private enum BoardDestination: Hashable, Identifiable {
         case .myData: return "My requests"
         case .portal: return "Developer portal"
         case .privateReports: return "My private reports"
-        case .privatePortal: return "Private reports"
         }
     }
 }
@@ -90,9 +88,11 @@ public struct FeedbackBoardView: View {
         container
             .task {
 
-                guard !store.requests.hasLoadedOnce else { return }
+                if !store.requests.hasLoadedOnce { await store.start() }
 
-                await store.start()
+                // For the portal entry's pending badge. Developer only - `loadAllReports` returns
+                // early for anyone else - and skipped while private feedback is off.
+                await loadPrivateQueueIfNeeded()
             }
     }
 
@@ -186,7 +186,6 @@ public struct FeedbackBoardView: View {
         case .myData: MyDataView(store: store, embedsNavigationStack: false)
         case .portal: DeveloperPortalView(store: store, embedsNavigationStack: false)
         case .privateReports: PrivateReportsView(store: store, scope: .mine, embedsNavigationStack: false)
-        case .privatePortal: PrivateReportsView(store: store, scope: .all, embedsNavigationStack: false)
         }
     }
     #endif
@@ -217,7 +216,7 @@ public struct FeedbackBoardView: View {
             .navigationTitle("Feedback")
             .searchable(text: $searchText, prompt: Text("Search"))
             .toolbar { toolbarContent }
-            .feedbackRefreshable { await store.refresh() }
+            .feedbackRefreshable { await refreshEverything() }
             .sheet(isPresented: $showingForm) {
 
                 FeedbackFormView(store: store, prefill: prefill, initialType: filter == .features ? .feature : .bug)
@@ -272,9 +271,10 @@ public struct FeedbackBoardView: View {
 
                     Button(action: { destination = .portal }) {
 
-                        Image(systemName: "hammer")
+                        BadgedSymbol(systemName: "hammer", count: portalPendingCount)
                     }
                     .help("Developer portal")
+                    .accessibilityLabel(portalAccessibilityLabel)
                 }
 
                 Menu {
@@ -461,7 +461,12 @@ public struct FeedbackBoardView: View {
             ToolbarItem(placement: toolbarTrailingPlacement) {
 
                 NavigationLink { DeveloperPortalView(store: store, embedsNavigationStack: false) }
-                    label: { Label("Developer portal", systemImage: "hammer") }
+                    label: {
+
+                        Label { Text("Developer portal") }
+                            icon: { BadgedSymbol(systemName: "hammer", count: portalPendingCount) }
+                    }
+                    .accessibilityLabel(portalAccessibilityLabel)
             }
         }
 
@@ -507,12 +512,6 @@ public struct FeedbackBoardView: View {
                    label: { Label("My private reports", systemImage: "lock") })
         }
 
-        if offersPrivateFeedback && store.container.isDeveloper {
-
-            Button(action: { destination = .privatePortal },
-                   label: { Label("Private reports", systemImage: "lock.shield") })
-        }
-
 #else
         NavigationLink { RoadmapView(store: store, embedsNavigationStack: false) }
             label: { Label("Roadmap", systemImage: "map") }
@@ -526,18 +525,36 @@ public struct FeedbackBoardView: View {
                 label: { Label("My private reports", systemImage: "lock") }
         }
 
-        if offersPrivateFeedback && store.container.isDeveloper {
-
-            NavigationLink { PrivateReportsView(store: store, scope: .all, embedsNavigationStack: false) }
-                label: { Label("Private reports", systemImage: "lock.shield") }
-        }
-
 #endif
     }
 
-    /// Gates both private entries. While `.disabled` the schema may not contain `PrivateReport`, so
-    /// neither the user's list nor the developer queue is offered.
+    /// Gates "My private reports" here and the portal's Private tab and badge. While `.disabled` the
+    /// schema may not contain `PrivateReport`, so neither the user's list nor the developer queue is
+    /// offered. The developer's queue has no entry of its own - it is the portal's Private tab.
     private var offersPrivateFeedback: Bool { store.configuration.privateFeedback != .disabled }
+
+    /// A number, unlike the Updates dot: every pending item is something the developer has to act
+    /// on, so the count is the useful part. Every app - the portal opens on all of them. See
+    /// `PrivateQueuePolicy` for what counts.
+    private var portalPendingCount: Int {
+
+        offersPrivateFeedback && store.container.isDeveloper ? store.privateReports.pendingCount() : 0
+    }
+
+    private var portalAccessibilityLabel: Text {
+
+        let pending = portalPendingCount
+
+        return pending > 0 ? Text("Developer portal, ^[\(pending) pending private item](inflect: true)")
+                           : Text("Developer portal")
+    }
+
+    private func loadPrivateQueueIfNeeded() async {
+
+        guard offersPrivateFeedback, store.container.isDeveloper else { return }
+
+        await store.privateReports.loadAllReports()
+    }
 
     /// A dot, not a number.
     ///
@@ -593,8 +610,11 @@ public struct FeedbackBoardView: View {
     private func refreshEverything() async {
 
         await store.refresh()
+        await loadPrivateQueueIfNeeded()
 
+#if os(macOS)
         if let selection { await store.comments.load(for: selection) }
+#endif
     }
 
     private func isSelected(_ request: FeedbackRequest) -> Bool { selection == request.id }

@@ -37,7 +37,10 @@ enum PortalQueue: String, CaseIterable, Hashable {
 }
 
 
-/// Developer-facing triage.
+/// Developer-facing triage: public requests and, when `privateFeedback` is on, the private reports
+/// queue, behind one Public / Private switch. The app filter and search are shared by both; the
+/// version filter and the Open/Reported/Images/All queues apply to public requests, Pending/All to
+/// private ones. The Private tab's label carries the pending figure (`PrivateQueuePolicy`).
 ///
 /// Shipping this view in every build is not a security hole: `FeedbackContainer.isDeveloper` decides
 /// whether it is *offered*, and the `dev` security role decides whether its writes are *accepted*.
@@ -45,12 +48,15 @@ public struct DeveloperPortalView: View {
 
     @State private var store: FeedbackStore
 
+    @State private var segment: PortalSegment = .requests
     @State private var queue: PortalQueue = .open
+    @State private var privateFilter: PrivateQueueFilter = .pending
     @State private var versionFilter: String?
     @State private var appFilter: AppFilter = .all
     // Selected by ID, not by value: the struct is replaced wholesale on every reload,
     // so a value-based selection would silently drop each time the board refreshes.
     @State private var selection: CKRecord.ID?
+    @State private var privateSelection: CKRecord.ID?
     @State private var searchText = ""
 
     /// The request the delete confirmation is asking about. Held here rather than on the row so the
@@ -85,6 +91,10 @@ public struct DeveloperPortalView: View {
                 // before ever reaching the line below. Placed after `start` so identity has resolved
                 // and `isDeveloper` is answerable.
                 await store.askForDeveloperNotificationsIfNeeded()
+
+                // Loaded up front rather than when the Private tab is first opened, so its badge is
+                // right before anyone taps it.
+                if offersPrivateFeedback { await store.privateReports.loadAllReports() }
             }
             .confirmationDialog("Delete request?",
                                 isPresented: Binding(get: { pendingDeletion != nil },
@@ -129,18 +139,38 @@ public struct DeveloperPortalView: View {
 
             Group {
 
-                if let selected = selectedRequest {
+                switch activeSegment {
 
-                    // Its own `NavigationStack` so its toolbar and refresh action stay scoped to this
-                    // pane rather than merging into the queue list's.
-                    NavigationStack { PortalRequestView(store: store, request: selected) }
-                        .id(selected.id)
-                }
-                else {
+                case .requests:
 
-                    FeedbackEmptyState(symbol: "hammer",
-                                       title: "Nothing selected",
-                                       message: "Pick a request from the list.")
+                    if let selected = selectedRequest {
+
+                        // Its own `NavigationStack` so its toolbar and refresh action stay scoped to this
+                        // pane rather than merging into the queue list's.
+                        NavigationStack { PortalRequestView(store: store, request: selected) }
+                            .id(selected.id)
+                    }
+                    else {
+
+                        FeedbackEmptyState(symbol: "hammer",
+                                           title: "Nothing selected",
+                                           message: "Pick a request from the list.")
+                    }
+
+                case .privateReports:
+
+                    // Beside the list, like a public request - not pushed inside the list's pane.
+                    if let selected = selectedPrivateReport {
+
+                        NavigationStack { PrivateReportDetailView(store: store, report: selected, scope: .all) }
+                            .id(selected.id)
+                    }
+                    else {
+
+                        FeedbackEmptyState(symbol: "lock.shield",
+                                           title: "Nothing selected",
+                                           message: "Pick a private report from the list.")
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -185,11 +215,11 @@ public struct DeveloperPortalView: View {
 
                     Spacer(minLength: 8)
 
-                    AppFilterPicker(selection: $appFilter, appIDs: store.requests.requests.map(\.appID))
+                    AppFilterPicker(selection: $appFilter, appIDs: filterableAppIDs)
 
-                    versionMenu
+                    if activeSegment == .requests { versionMenu }
 
-                    Button(action: { Task { await store.load() } }) {
+                    Button(action: { Task { await Self.refresh(store: store, includesPrivate: offersPrivateFeedback) } }) {
 
                         Image(systemName: "arrow.clockwise")
                     }
@@ -197,33 +227,73 @@ public struct DeveloperPortalView: View {
                     .help("Refresh")
                 }
                 
-                listFilter
+                if offersPrivateFeedback { segmentPicker }
+
+                switch activeSegment {
+
+                case .requests: listFilter
+                case .privateReports: privateFilterPicker
+                }
             }
             .padding([.horizontal, .top], 12)
 
-            portalList
+            segmentList
         }
         .ownedNavigationTitle("Dev Portal", ownsStack: embedsNavigationStack)
 #else
-        portalList
+        segmentList
             .navigationTitle("Dev Portal")
             .searchable(text: $searchText, prompt: Text("Search"))
-            .feedbackRefreshable { await store.load() }
+            .feedbackRefreshable { [store, includesPrivate = offersPrivateFeedback] in
+
+                await Self.refresh(store: store, includesPrivate: includesPrivate)
+            }
             .toolbar {
 
-                if AppFilterPicker.isVisible(selection: appFilter, appIDs: store.requests.requests.map(\.appID)) {
+                if AppFilterPicker.isVisible(selection: appFilter, appIDs: filterableAppIDs) {
 
                     ToolbarItem(placement: toolbarTrailingPlacement) {
 
-                        AppFilterPicker(selection: $appFilter, appIDs: store.requests.requests.map(\.appID))
+                        AppFilterPicker(selection: $appFilter, appIDs: filterableAppIDs)
                     }
                 }
 
-                if !availableVersions.isEmpty {
+                if activeSegment == .requests && !availableVersions.isEmpty {
 
                     ToolbarItem(placement: toolbarTrailingPlacement) { versionMenu }
                 }
             }
+#endif
+    }
+
+    @ViewBuilder private var segmentList: some View {
+
+        switch activeSegment {
+
+        case .requests: portalList
+        case .privateReports: privateList
+        }
+    }
+
+    /// The same list `PrivateReportsView` shows, fed the portal's shared app filter and search.
+    @ViewBuilder private var privateList: some View {
+
+#if os(macOS)
+        PrivateReportsList(store: store,
+                           scope: .all,
+                           appFilter: appFilter,
+                           filter: privateFilter,
+                           searchText: searchText,
+                           selection: $privateSelection)
+#else
+        PrivateReportsList(store: store,
+                           scope: .all,
+                           appFilter: appFilter,
+                           filter: privateFilter,
+                           searchText: searchText) {
+
+            filterSection { privateFilterPicker }
+        }
 #endif
     }
 
@@ -255,16 +325,66 @@ public struct DeveloperPortalView: View {
         .frame(maxWidth: .infinity, minHeight: 50)
     }
 
-    @ViewBuilder private var portalRows: some View {
+    /// Public / Private. Only drawn when private feedback is on - with it `.disabled` the schema may
+    /// not have `PrivateReport` at all, and the portal is public requests only, as before.
+    @ViewBuilder private var segmentPicker: some View {
 
-#if os(iOS)
+        Picker("", selection: $segment) {
+
+            Text("Public").tag(PortalSegment.requests)
+
+            privateSegmentTitle.tag(PortalSegment.privateReports)
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .accessibilityLabel(Text("Public requests or private reports"))
+        .frame(maxWidth: .infinity, minHeight: 36)
+    }
+
+    /// A segmented control draws text only, so the pending figure goes in the title.
+    private var privateSegmentTitle: Text {
+
+        let pending = privatePendingCount
+
+        return pending > 0 ? Text("Private (\(pending))") : Text("Private")
+    }
+
+    @ViewBuilder private var privateFilterPicker: some View {
+
+        Picker("", selection: $privateFilter) {
+
+            ForEach(PrivateQueueFilter.allCases, id: \.self) {
+
+                Label($0.localised, systemImage: $0.symbolName).tag($0)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .accessibilityLabel(Text("Private queue"))
+        .frame(maxWidth: .infinity, minHeight: 50)
+    }
+
+    /// The iOS lists' first rows: the Public / Private switch, then the segment's own queue filter.
+    @ViewBuilder private func filterSection<Filter: View>(@ViewBuilder _ filter: () -> Filter) -> some View {
+
         Section {
-            
-            listFilter
+
+            VStack(spacing: 0) {
+
+                if offersPrivateFeedback { segmentPicker }
+
+                filter()
+            }
         }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
         .compactSectionSpacing()
+    }
+
+    @ViewBuilder private var portalRows: some View {
+
+#if os(iOS)
+        filterSection { listFilter }
 #endif
 
         if let error = store.moderation.error {
@@ -426,6 +546,42 @@ public struct DeveloperPortalView: View {
         guard let selection else { return nil }
 
         return store.requests.requests.first { $0.id == selection }
+    }
+
+    private var selectedPrivateReport: PrivateReport? {
+
+        guard let privateSelection else { return nil }
+
+        return store.privateReports.allReports.first { $0.id == privateSelection }
+    }
+
+    // MARK: - Segments
+
+    /// The same gate the board uses for its private entries.
+    private var offersPrivateFeedback: Bool { store.configuration.privateFeedback != .disabled }
+
+    /// Never the Private tab while private feedback is off, whatever `segment` was left on.
+    private var activeSegment: PortalSegment { offersPrivateFeedback ? segment : .requests }
+
+    /// The figure on the Private tab, narrowed by the shared app filter - see `PrivateQueuePolicy`.
+    private var privatePendingCount: Int {
+
+        offersPrivateFeedback ? store.privateReports.pendingCount(appFilter: appFilter) : 0
+    }
+
+    /// Both segments' apps, so the one shared filter offers every app either list could show and a
+    /// selection made on one tab stays valid on the other.
+    private var filterableAppIDs: [String?] {
+
+        store.requests.requests.map(\.appID)
+            + (offersPrivateFeedback ? store.privateReports.allReports.map(\.appID) : [])
+    }
+
+    private static func refresh(store: FeedbackStore, includesPrivate: Bool) async {
+
+        await store.load()
+
+        if includesPrivate { await store.privateReports.loadAllReports() }
     }
 
     // MARK: - Queues

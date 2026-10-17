@@ -19,15 +19,14 @@ public enum PrivateReportScope: String, Sendable, Hashable {
 
 /// Private, developer-only submissions: "My private reports" for a user, or the developer's queue.
 ///
+/// The board offers `.mine` only. The developer's queue lives in `DeveloperPortalView`'s Private tab,
+/// which embeds the same `PrivateReportsList`; `.all` stays here for hosts that show it on its own.
+///
 /// Rows push a detail view, so on the Mac this always owns a `NavigationStack` of its own - the pushes
 /// stay inside this view instead of replacing the host's content (see `BoardDestination`).
 public struct PrivateReportsView: View {
 
     @State private var store: FeedbackStore
-
-    /// The deletion request the confirmation dialog is asking about.
-    @State private var pendingProcess: PrivateDeletionRequest?
-    @State private var processing: Set<CKRecord.ID> = []
     @State private var appFilter: AppFilter = .all
 
     private let scope: PrivateReportScope
@@ -65,27 +64,103 @@ public struct PrivateReportsView: View {
 #endif
     }
 
-    private var reports: [PrivateReport] {
-
-        scope == .all
-            ? store.privateReports.allReports.filter { appFilter.matches($0.appID) }
-            : store.privateReports.myReports
-    }
-
     private var title: LocalizedStringKey { scope == .all ? "Private reports" : "My private reports" }
 
     @ViewBuilder private var list: some View {
 
-        List {
-
-            if scope == .all && store.container.isDeveloper && !store.privateReports.pendingDeletionRequests.isEmpty {
-
-                deletionRequestsSection
-            }
+        PrivateReportsList(store: store, scope: scope, appFilter: appFilter) {
 
             if scope == .all && store.container.isDeveloper {
 
                 AppFilterPicker(selection: $appFilter, appIDs: store.privateReports.allReports.map(\.appID))
+            }
+        }
+        .ownedNavigationTitle(title, ownsStack: embedsNavigationStack)
+        .inlineNavigationTitle()
+        .feedbackRefreshable { [store, scope] in await store.privateReports.load(scope) }
+        .task {
+
+            await store.start()
+            await store.privateReports.load(scope)
+        }
+    }
+}
+
+
+/// The private reports list itself, without navigation, title, loading or refresh - those belong to
+/// whoever embeds it: `PrivateReportsView` on its own, or `DeveloperPortalView`'s Private tab.
+///
+/// `header` is rendered as the list's first rows, so a host can put its own filter controls inside the
+/// scrolling list the way the portal's public queue does.
+///
+/// With `selection` set, rows select instead of pushing - the Mac portal shows the detail beside the
+/// list, as it does for public requests, rather than pushing inside a pane.
+struct PrivateReportsList<Header: View>: View {
+
+    let store: FeedbackStore
+    let scope: PrivateReportScope
+
+    let appFilter: AppFilter
+    let filter: PrivateQueueFilter
+    let searchText: String
+    let selection: Binding<CKRecord.ID?>?
+
+    let header: () -> Header
+
+    /// The deletion request the confirmation dialog is asking about.
+    @State private var pendingProcess: PrivateDeletionRequest?
+    @State private var processing: Set<CKRecord.ID> = []
+
+    init(store: FeedbackStore,
+         scope: PrivateReportScope,
+         appFilter: AppFilter = .all,
+         filter: PrivateQueueFilter = .all,
+         searchText: String = "",
+         selection: Binding<CKRecord.ID?>? = nil,
+         @ViewBuilder header: @escaping () -> Header) {
+
+        self.store = store
+        self.scope = scope
+        self.appFilter = appFilter
+        self.filter = filter
+        self.searchText = searchText
+        self.selection = selection
+        self.header = header
+    }
+
+    private var isDeveloperQueue: Bool { scope == .all && store.container.isDeveloper }
+
+    private var reports: [PrivateReport] {
+
+        switch scope {
+
+        case .all:
+            return PrivateQueuePolicy.queued(store.privateReports.allReports,
+                                             deletionRequests: store.privateReports.pendingDeletionRequests,
+                                             appFilter: appFilter,
+                                             filter: filter,
+                                             searchText: searchText)
+
+        case .mine:
+            return store.privateReports.myReports
+        }
+    }
+
+    /// Whether the queue is empty because of a filter rather than because nothing exists.
+    private var isFilteredEmpty: Bool {
+
+        scope == .all && !store.privateReports.allReports.isEmpty
+    }
+
+    var body: some View {
+
+        List {
+
+            header()
+
+            if isDeveloperQueue && !store.privateReports.pendingDeletionRequests.isEmpty {
+
+                deletionRequestsSection
             }
 
             if store.container.identityState == .resolving {
@@ -109,6 +184,16 @@ public struct PrivateReportsView: View {
 
                 Section { ProgressView("Loading…").frame(maxWidth: .infinity) }
             }
+            else if reports.isEmpty && isFilteredEmpty {
+
+                Section {
+
+                    FeedbackEmptyState(symbol: filter.symbolName,
+                                       title: "Nothing here",
+                                       message: filter == .pending ? "No private reports are waiting on you."
+                                                                   : "No private reports match.")
+                }
+            }
             else if reports.isEmpty {
 
                 Section {
@@ -120,19 +205,13 @@ public struct PrivateReportsView: View {
             }
             else {
 
-                ForEach(reports) { report in
+                Section {
 
-                    NavigationLink {
+                    ForEach(reports) { report in row(for: report) }
 
-                        PrivateReportDetailView(store: store, report: report, scope: scope)
+                } header: {
 
-                    } label: {
-
-                        PrivateReportRow(report: report,
-                                         showsCreator: scope == .all,
-                                         showsApp: scope == .all,
-                                         isDeletionPending: store.privateReports.isDeletionPending(report))
-                    }
+                    if scope == .all { Text("^[\(reports.count) report](inflect: true)") }
                 }
             }
 
@@ -140,14 +219,6 @@ public struct PrivateReportsView: View {
 
                 Section { FeedbackErrorBanner(error: error, retry: nil) }
             }
-        }
-        .ownedNavigationTitle(title, ownsStack: embedsNavigationStack)
-        .inlineNavigationTitle()
-        .feedbackRefreshable { [store, scope] in await Self.load(store: store, scope: scope) }
-        .task {
-
-            await store.start()
-            await Self.load(store: store, scope: scope)
         }
         .confirmationDialog("Delete these private reports?",
                             isPresented: Binding(get: { pendingProcess != nil },
@@ -166,6 +237,48 @@ public struct PrivateReportsView: View {
             case .all: Text("Every private report this person has sent is deleted, with its images and replies. This can't be undone.")
             case .reports: Text("The requested reports are deleted, with their images and replies. This can't be undone.")
             }
+        }
+    }
+
+    @ViewBuilder private func row(for report: PrivateReport) -> some View {
+
+        let content = PrivateReportRow(report: report,
+                                       showsCreator: scope == .all,
+                                       showsApp: scope == .all,
+                                       isDeletionPending: store.privateReports.isDeletionPending(report))
+
+        if let selection {
+
+            let isSelected = selection.wrappedValue == report.id
+
+            // The same card as the portal's public rows - see `DeveloperPortalView.row(for:)`.
+            Button(action: { selection.wrappedValue = report.id }) {
+
+                content
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(isSelected ? AnyShapeStyle(Color.accentColor.opacity(0.18))
+                                           : AnyShapeStyle(.quaternary),
+                                in: RoundedRectangle(cornerRadius: 8))
+                    .overlay {
+
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(Color.accentColor, lineWidth: isSelected ? 1.5 : 0)
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        }
+        else {
+
+            NavigationLink {
+
+                PrivateReportDetailView(store: store, report: report, scope: scope)
+
+            } label: { content }
         }
     }
 
@@ -234,15 +347,37 @@ public struct PrivateReportsView: View {
         }
     }
 
-    private static func load(store: FeedbackStore, scope: PrivateReportScope) async {
+}
+
+
+extension PrivateReportService {
+
+    /// The load each scope's list shows.
+    func load(_ scope: PrivateReportScope) async {
 
         switch scope {
 
-        case .mine: await store.privateReports.loadMine()
-        case .all: await store.privateReports.loadAllReports()
+        case .mine: await loadMine()
+        case .all: await loadAllReports()
         }
     }
 }
+
+
+extension PrivateReportsList where Header == EmptyView {
+
+    init(store: FeedbackStore,
+         scope: PrivateReportScope,
+         appFilter: AppFilter = .all,
+         filter: PrivateQueueFilter = .all,
+         searchText: String = "",
+         selection: Binding<CKRecord.ID?>? = nil) {
+
+        self.init(store: store, scope: scope, appFilter: appFilter, filter: filter,
+                  searchText: searchText, selection: selection, header: { EmptyView() })
+    }
+}
+
 
 
 struct PrivateReportRow: View {

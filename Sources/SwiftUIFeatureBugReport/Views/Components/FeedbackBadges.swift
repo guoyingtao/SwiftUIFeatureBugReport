@@ -269,3 +269,34 @@ struct AppFilterPicker: View {
         }
     }
 }
+
+
+/// A symbol with a small count badge on its corner - the portal entry's pending figure. Nothing is
+/// drawn over the symbol at zero. Capped at "99+" so a backlog never outgrows the icon.
+///
+/// The count is decoration: callers give the control its own accessibility label with the number in it.
+struct BadgedSymbol: View {
+
+    let systemName: String
+    let count: Int
+
+    var body: some View {
+
+        Image(systemName: systemName)
+            .overlay(alignment: .topTrailing) {
+
+                if count > 0 {
+
+                    Text(verbatim: count > 99 ? "99+" : "\(count)")
+                        .font(.system(size: 9, weight: .bold).monospacedDigit())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 3)
+                        .frame(minWidth: 14, minHeight: 14)
+                        .background(.red, in: Capsule())
+                        .fixedSize()
+                        .offset(x: 8, y: -7)
+                        .accessibilityHidden(true)
+                }
+            }
+    }
+}

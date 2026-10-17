@@ -62,6 +62,15 @@ import Observation
                                         in: myDeletionRequests + pendingDeletionRequests)
     }
 
+    /// The developer's pending figure - see `PrivateQueuePolicy` for the rule. Zero until
+    /// `loadAllReports()` has run, so only meaningful for a developer.
+    public func pendingCount(appFilter: AppFilter = .all) -> Int {
+
+        PrivateQueuePolicy.pendingCount(reports: allReports,
+                                        deletionRequests: pendingDeletionRequests,
+                                        appFilter: appFilter)
+    }
+
     // MARK: - Reading
 
     /// Loads the signed-in user's own reports, every page.

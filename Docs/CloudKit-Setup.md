@@ -102,8 +102,8 @@ Verify the privacy before deploying, with two Apple Accounts on two devices or s
    a permission error. Delete the debug call afterwards.
 4. In CloudKit Console's **Records** view, query `PrivateReport` while acting as a user without the
    `dev` role (**Act as iCloud Account**). Only that account's own reports should be listed.
-5. **The developer account** (in `developerUserRecordIDs`, with the `dev` role) opens "Private reports"
-   from the board's "more" menu: reports from both A and B must be listed. Open one, change its status
+5. **The developer account** (in `developerUserRecordIDs`, with the `dev` role) opens the developer portal
+   from the board's toolbar and switches to **Private**: reports from both A and B must be listed. Open one, change its status
    and send a reply.
 6. Back on **A**, refresh "My private reports": the status and the reply must show.
 7. As **A**, try to modify and to delete A's own report directly, for example with temporary debug
@@ -111,7 +111,7 @@ Verify the privacy before deploying, with two Apple Accounts on two devices or s
    must fail with a permission error. Delete the debug calls afterwards.
 8. As **A**, choose "Ask the developer to delete this" on one report, then "Delete my data" in
    "My requests". The report is marked "Deletion requested", and "My requests" shows the pending request.
-9. As the **developer**, open "Private reports": both requests are listed under "Deletion requests".
+9. As the **developer**, open the portal's **Private** tab: the portal button's badge includes the requests, and both requests are listed under "Deletion requests".
    Delete them: A's reports and the requests disappear. A request naming B's report, created by hand in
    the Console as A, must delete nothing of B's.
 
