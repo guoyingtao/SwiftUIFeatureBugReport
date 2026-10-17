@@ -30,6 +30,15 @@ import Observation
     /// the pending rule. Filled by `loadAllReports`.
     private var followUpActivity: [String: [PrivateFollowUp]] = [:]
 
+    /// Reports known to be deleted this session - by this device, or found missing when fetched by ID.
+    /// A lagging query index can keep returning them for a while; they are never listed again. See
+    /// `PrivateReportConsistency`.
+    private var tombstones: Set<String> = []
+
+    /// Reports this device created that the query index may not return yet. Kept on the list until it
+    /// does. See `PrivateReportConsistency.merging`.
+    private var pendingSubmissions: [PrivateReport] = []
+
     /// The follow-ups known for every report: the detail's full copy where loaded, the bulk activity
     /// otherwise. Unfiltered - `PrivateThread` decides which are shown.
     public var followUpsByReport: [String: [PrivateFollowUp]] { followUpActivity.merging(threadFollowUps) { _, thread in thread } }
@@ -82,6 +91,8 @@ import Observation
         pendingDeletionRequests = []
         threadFollowUps = [:]
         followUpActivity = [:]
+        tombstones = []
+        pendingSubmissions = []
         error = nil
     }
 
@@ -123,9 +134,14 @@ import Observation
         let predicate = scope.predicate(NSPredicate(format: "creatorUserRecordID == %@", reference))
         let started = generation
 
-        if let loaded = await loadAll(matching: predicate), started == generation {
+        // Replaces the list - nothing from an earlier load survives except reports this device has just
+        // sent and the index does not return yet, and those are checked by ID like the rest.
+        if let loaded = await loadAll(matching: predicate, including: pendingSubmissions), started == generation {
 
-            myReports = loaded.filter { scope.includes($0.appID) }
+            let merged = PrivateReportConsistency.merging(query: loaded.query, pending: loaded.extra)
+
+            pendingSubmissions = merged.stillPending
+            myReports = merged.reports.filter { scope.includes($0.appID) }
             hasLoadedMine = true
         }
 
@@ -232,7 +248,7 @@ import Observation
 
         let started = generation
 
-        if let loaded = await loadAll(matching: NSPredicate(value: true)), started == generation { allReports = loaded }
+        if let loaded = await loadAll(matching: NSPredicate(value: true)), started == generation { allReports = loaded.query }
 
         await loadPendingDeletionRequests()
         await loadFollowUpActivity()
@@ -421,7 +437,9 @@ import Observation
 
             if CloudKitErrorHandler.isRecordMissing(error) {
 
-                removeLocally(report.id)
+                // Deleted - by the developer, or a processed deletion request. Gone from the lists for
+                // good, whatever a lagging query says next.
+                forget(report.id)
             }
             else {
 
@@ -431,6 +449,9 @@ import Observation
             return report
         }
     }
+
+    /// Whether the report is known to be deleted - its detail should close.
+    public func isKnownDeleted(_ report: PrivateReport) -> Bool { tombstones.contains(report.id.recordName) }
 
     /// Downloads one attached file and copies it to a temporary file under its original name, so Quick
     /// Look, the share sheet and Books see the right name and type.
@@ -447,7 +468,11 @@ import Observation
         }
         catch {
 
-            if CloudKitErrorHandler.isRecordMissing(error) { throw FileAttachmentError.missing(name: file.name) }
+            if CloudKitErrorHandler.isRecordMissing(error) {
+
+                forget(report.id)
+                throw FileAttachmentError.missing(name: file.name)
+            }
 
             throw CloudKitErrorHandler.classify(error)
         }
@@ -505,7 +530,11 @@ import Observation
     /// Returns `nil` when nothing at all could be read, so a failed refresh leaves the previous list
     /// on screen rather than blanking it, and also when `reset()` ran during the load - a stale result
     /// is never handed back. A failure after the first page keeps what was read and surfaces the error.
-    private func loadAll(matching predicate: NSPredicate) async -> [PrivateReport]? {
+    ///
+    /// Everything the query returned - and `extra`, reports listed locally that the query may not
+    /// return yet - is then checked by ID (`missingReportNames`), and what is gone is dropped.
+    private func loadAll(matching predicate: NSPredicate,
+                         including extra: [PrivateReport] = []) async -> (query: [PrivateReport], extra: [PrivateReport])? {
 
         let started = generation
 
@@ -560,7 +589,30 @@ import Observation
         }
         while cursor != nil
 
-        return collected
+        let gone = await missingReportNames(Set((collected + extra).map(\.id)))
+
+        guard started == generation else { return nil }
+
+        tombstones.formUnion(gone)
+
+        return (PrivateReportConsistency.pruned(collected, removing: tombstones),
+                PrivateReportConsistency.pruned(extra, removing: tombstones))
+    }
+
+    /// Which of `ids` no longer exist, by fetching them by ID with no fields - not served from the
+    /// query index, so it sees a deletion at once. Best effort: a failed check reports nothing gone.
+    private func missingReportNames(_ ids: Set<CKRecord.ID>) async -> Set<String> {
+
+        var gone: Set<String> = []
+
+        for chunk in Array(ids).chunked(into: CloudKitBatch.maximumOperationSize) {
+
+            guard let fetched = try? await database.records(for: chunk, desiredKeys: []) else { continue }
+
+            gone.formUnion(PrivateReportConsistency.missingNames(in: fetched.map { id, result in (id, result.map { _ in () }) }))
+        }
+
+        return gone
     }
 
     // MARK: - Writing
@@ -591,6 +643,12 @@ import Observation
 
                 throw invalid
             }
+        }
+
+        // A temporary copy that has gone would upload as nothing, or fail the whole save.
+        if let unavailable = PrivateReportSubmissionCheck.firstUnavailable(files) {
+
+            throw FileAttachmentError.unreadable(name: unavailable.name)
         }
 
         let started = generation
@@ -646,8 +704,19 @@ import Observation
         }
 
         // Saved either way - it is the previous account's record - but only listed if that account is
-        // still the one signed in.
-        if started == generation { myReports.insert(saved, at: 0) }
+        // still the one signed in. Kept as pending until the query index returns it.
+        if started == generation {
+
+            myReports.insert(saved, at: 0)
+            pendingSubmissions.append(saved)
+        }
+
+        // Never "sent" with a file silently missing. The report itself is saved and listed, so the
+        // error says which file did not make it rather than inviting a duplicate.
+        if let missing = PrivateReportSubmissionCheck.missingFile(sent: files.map(\.name), saved: saved.files) {
+
+            throw FileAttachmentError.missing(name: missing)
+        }
 
         return saved
     }
@@ -998,10 +1067,7 @@ import Observation
 
             guard started == generation else { return }
 
-            let deleted = Set(targets)
-
-            allReports.removeAll { deleted.contains($0.id) }
-            myReports.removeAll { deleted.contains($0.id) }
+            targets.forEach { forget($0) }
             targetNames.forEach { threadFollowUps[$0] = nil; followUpActivity[$0] = nil }
             pendingDeletionRequests.removeAll { $0.id == request.id }
             myDeletionRequests.removeAll { $0.id == request.id }
@@ -1078,7 +1144,7 @@ import Observation
 
         guard started == generation else { return }
 
-        removeLocally(report.id)
+        forget(report.id)
         threadFollowUps[reportName] = nil
         followUpActivity[reportName] = nil
         pendingDeletionRequests.removeAll { removedRequests.contains($0.id) }
@@ -1208,9 +1274,11 @@ import Observation
         if let index = allReports.firstIndex(where: { $0.id == updated.id }) { allReports[index] = updated }
     }
 
-    /// Drops a report that no longer exists from both lists.
-    private func removeLocally(_ id: CKRecord.ID) {
+    /// Drops a report that no longer exists from both lists, and keeps it off them for the session.
+    private func forget(_ id: CKRecord.ID) {
 
+        tombstones.insert(id.recordName)
+        pendingSubmissions.removeAll { $0.id == id }
         myReports.removeAll { $0.id == id }
         allReports.removeAll { $0.id == id }
     }

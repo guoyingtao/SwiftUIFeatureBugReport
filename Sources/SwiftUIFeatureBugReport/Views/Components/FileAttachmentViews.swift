@@ -19,10 +19,13 @@ struct FileAttachmentPicker: View {
 
     let rules: FileAttachmentRules
 
+    /// True while picked files are still being copied in. The form must not submit meanwhile: the
+    /// files are not in `files` yet, so the report would go without them - and still say "sent".
+    @Binding var isCopying: Bool
+
     /// The last refusal, shown under the list. Cleared by the next successful pick or removal.
     @State private var error: FileAttachmentError?
     @State private var isImporting = false
-    @State private var isCopying = false
 
     private var remaining: Int { max(0, rules.maxCount - files.count) }
 

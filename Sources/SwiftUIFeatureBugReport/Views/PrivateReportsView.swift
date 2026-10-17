@@ -569,6 +569,13 @@ struct PrivateReportDetailView: View {
 
         let loaded = await store.privateReports.loadDetail(report)
 
+        // Deleted meanwhile - by the developer, or a processed deletion request. Nothing left to show.
+        if store.privateReports.isKnownDeleted(report) {
+
+            dismiss()
+            return
+        }
+
         if belongsToCurrentIdentity { report = loaded }
     }
 

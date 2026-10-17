@@ -211,7 +211,7 @@ public struct PendingFileAttachment: Identifiable, Sendable, Hashable {
 
             let destination = directory.appendingPathComponent(name)
 
-            try FileManager.default.copyItem(at: source, to: destination)
+            try coordinatedCopy(from: source, to: destination)
 
             // Measured again on the copy: the reported size can be stale for a file still being written.
             let copiedSize = (try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? size
@@ -229,6 +229,22 @@ public struct PendingFileAttachment: Identifiable, Sendable, Hashable {
 
             return .failure(.unreadable(name: name))
         }
+    }
+
+    /// Copies through `NSFileCoordinator`, so a file in iCloud Drive or another file provider that is
+    /// not on the device yet is downloaded first instead of failing as unreadable.
+    static func coordinatedCopy(from source: URL, to destination: URL) throws {
+
+        var coordinationError: NSError?
+        var copyError: Error?
+
+        NSFileCoordinator().coordinate(readingItemAt: source, options: [.withoutChanges], error: &coordinationError) { readable in
+
+            do { try FileManager.default.copyItem(at: readable, to: destination) }
+            catch { copyError = error }
+        }
+
+        if let error = coordinationError ?? copyError { throw error }
     }
 
     /// Removes the temporary copy and its directory.

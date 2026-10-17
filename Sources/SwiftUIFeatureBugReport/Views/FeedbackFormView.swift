@@ -23,6 +23,9 @@ public struct FeedbackFormView: View {
     /// Files copied out of the picker's security scope - see `FileAttachmentPicker`. Private only.
     @State private var files: [PendingFileAttachment] = []
 
+    /// Picked files still being copied in - see `FileAttachmentPicker.isCopying`. Submit waits for it.
+    @State private var isImportingFiles = false
+
     /// The user's own choice. Whether the submission is actually private also depends on the mode -
     /// see `isPrivate`.
     @State private var privateChoice = false
@@ -81,6 +84,7 @@ public struct FeedbackFormView: View {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !body_.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !isSubmitting
+            && !isImportingFiles
             && store.canWrite
     }
 
@@ -180,7 +184,7 @@ public struct FeedbackFormView: View {
 
                 Section {
 
-                    FileAttachmentPicker(files: $files, rules: store.configuration.fileAttachmentRules)
+                    FileAttachmentPicker(files: $files, rules: store.configuration.fileAttachmentRules, isCopying: $isImportingFiles)
 
                 } footer: {
 
