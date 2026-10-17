@@ -115,6 +115,10 @@ struct PrivateReportsList<Header: View>: View {
     @State private var pendingProcess: PrivateDeletionRequest?
     @State private var processing: Set<CKRecord.ID> = []
 
+    /// The report the developer asked to delete from the queue, awaiting confirmation.
+    @State private var pendingReportDeletion: PrivateReport?
+    @State private var deletingReports: Set<CKRecord.ID> = []
+
     init(store: FeedbackStore,
          scope: PrivateReportScope,
          appFilter: AppFilter = .all,
@@ -222,6 +226,17 @@ struct PrivateReportsList<Header: View>: View {
                     if scope == .all { Text("^[\(reports.count) report](inflect: true)") }
                     else if let listTitle { Text(listTitle) }
                 }
+                .confirmationDialog("Delete this private report?",
+                                    isPresented: Binding(get: { pendingReportDeletion != nil },
+                                                         set: { if !$0 { pendingReportDeletion = nil } }),
+                                    titleVisibility: .visible,
+                                    presenting: pendingReportDeletion) { report in
+
+                    Button("Delete report", role: .destructive) { deleteReport(report) }
+
+                    Button("Cancel", role: .cancel) { pendingReportDeletion = nil }
+
+                } message: { _ in Text(PrivateReportDetailView.deleteReportMessage) }
             }
 
             if let error = store.privateReports.error {
@@ -249,7 +264,29 @@ struct PrivateReportsList<Header: View>: View {
         }
     }
 
+    /// In the developer's queue a row can also be deleted outright, after confirmation - a swipe on
+    /// iOS, a context menu on both platforms. Submitters never get this; they request deletion.
     @ViewBuilder private func row(for report: PrivateReport) -> some View {
+
+        if isDeveloperQueue {
+
+            rowContent(for: report)
+                .disabled(deletingReports.contains(report.id))
+                .rowActions {
+
+                    Button(role: .destructive, action: { pendingReportDeletion = report }) {
+
+                        Label("Delete report", systemImage: "trash")
+                    }
+                }
+        }
+        else {
+
+            rowContent(for: report)
+        }
+    }
+
+    @ViewBuilder private func rowContent(for report: PrivateReport) -> some View {
 
         let content = PrivateReportRow(report: report,
                                        showsCreator: scope == .all,
@@ -353,6 +390,29 @@ struct PrivateReportsList<Header: View>: View {
             }
 
             processing.remove(request.id)
+        }
+    }
+
+    /// Developer only: deletes one whole report from the queue - see `PrivateReportService.deleteReport`.
+    private func deleteReport(_ report: PrivateReport) {
+
+        pendingReportDeletion = nil
+        deletingReports.insert(report.id)
+
+        Task {
+
+            do {
+
+                try await store.privateReports.deleteReport(report)
+
+                if let selection, selection.wrappedValue == report.id { selection.wrappedValue = nil }
+            }
+            catch {
+
+                store.privateReports.error = error as? FeedbackError ?? CloudKitErrorHandler.classify(error)
+            }
+
+            deletingReports.remove(report.id)
         }
     }
 
@@ -469,6 +529,10 @@ struct PrivateReportDetailView: View {
     @State private var pendingRemoval: PrivateAttachment?
     @State private var isRemovingAttachment = false
 
+    /// Developer only: deleting the whole report.
+    @State private var showingDeleteReportConfirmation = false
+    @State private var isDeletingReport = false
+
     @Environment(\.dismiss) private var dismiss
 
     private let scope: PrivateReportScope
@@ -582,7 +646,12 @@ struct PrivateReportDetailView: View {
 
         composerSection
 
-        if showsDeveloperControls { developerSections }
+        if showsDeveloperControls {
+
+            developerSections
+
+            deleteReportSection
+        }
 
         if scope == .mine { deletionSection }
 
@@ -793,6 +862,66 @@ struct PrivateReportDetailView: View {
             LabeledContent { Text(report.creatorID).textSelection(.enabled) } label: { Text("Sender") }
 
         } header: { Text("Details") }
+    }
+
+    // MARK: - Deleting the report
+
+    /// The confirmation's explanation, shared with the queue's swipe action.
+    static let deleteReportMessage: LocalizedStringKey = "The report, its whole conversation and every image and file are permanently deleted, for the sender too. This can't be undone."
+
+    /// Developer only, in the portal. Submitters get `deletionSection` instead.
+    @ViewBuilder private var deleteReportSection: some View {
+
+        Section {
+
+            Button(role: .destructive, action: { showingDeleteReportConfirmation = true }) {
+
+                HStack {
+
+                    Label("Delete report", systemImage: "trash")
+
+                    if isDeletingReport {
+
+                        Spacer()
+
+                        ProgressView().controlSize(.small)
+                    }
+                }
+            }
+            .disabled(isDeletingReport)
+
+        } footer: { Text("Deletes this report and its conversation for you and the sender.") }
+          .confirmationDialog("Delete this private report?",
+                              isPresented: $showingDeleteReportConfirmation,
+                              titleVisibility: .visible) {
+
+              Button("Delete report", role: .destructive) { deleteReport() }
+
+              Button("Cancel", role: .cancel) { }
+
+          } message: { Text(Self.deleteReportMessage) }
+    }
+
+    private func deleteReport() {
+
+        isDeletingReport = true
+        error = nil
+
+        Task {
+
+            do {
+
+                try await store.privateReports.deleteReport(report)
+
+                isDeletingReport = false
+                dismiss()
+            }
+            catch {
+
+                self.error = error as? FeedbackError ?? CloudKitErrorHandler.classify(error)
+                isDeletingReport = false
+            }
+        }
     }
 
     // MARK: - Removing attachments

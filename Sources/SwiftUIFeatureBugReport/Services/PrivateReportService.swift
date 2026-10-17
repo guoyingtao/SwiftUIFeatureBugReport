@@ -1012,6 +1012,100 @@ import Observation
         }
     }
 
+    // MARK: - Deleting a report
+
+    /// Developer only: permanently deletes one private report - its images, files and developer
+    /// replies with it - and every follow-up in its conversation, for the sender and the developer
+    /// alike. Refused here for non-developers as a convenience; the `dev` role is what lets CloudKit
+    /// delete another person's records.
+    ///
+    /// The follow-ups are queried and deleted first, explicitly: `.deleteSelf` would cascade them, but
+    /// nothing here depends on that. Records that are already gone count as deleted. If anything else
+    /// fails the error is thrown and the report stays listed, so the developer can try again.
+    ///
+    /// Afterwards, best effort: pending deletion requests from the sender that named only this report
+    /// are removed, being fulfilled (`.all` requests are kept - see
+    /// `PrivateReportDeletion.fulfilledRequests`), and the local image and file copies are deleted.
+    public func deleteReport(_ report: PrivateReport) async throws {
+
+        guard container.isDeveloper else { throw FeedbackError.developerOnly }
+
+        let started = generation
+        let reportName = report.id.recordName
+
+        do {
+
+            let reference = CKRecord.Reference(recordID: report.id, action: .none)
+            let followUps = try await fetchFollowUps(matching: NSPredicate(format: "%K == %@", FieldKey.report, reference),
+                                                     desiredKeys: [FieldKey.report],
+                                                     sorted: false)
+
+            let followUpIDs = PrivateReportDeletion.followUpIDs(followUps.map { (id: $0.id, reportName: $0.reportName) },
+                                                                reportName: reportName)
+
+            try await CloudKitBatch.delete(followUpIDs, in: database)
+            try await CloudKitBatch.delete([report.id], in: database)
+        }
+        catch {
+
+            throw CloudKitErrorHandler.classify(error)
+        }
+
+        // The report is gone. Nothing below may fail the deletion.
+        let fulfilled = PrivateReportDeletion.fulfilledRequests(pendingDeletionRequests + myDeletionRequests,
+                                                                reportName: reportName,
+                                                                reportCreator: report.creatorID)
+
+        var removedRequests: Set<CKRecord.ID> = []
+
+        for request in fulfilled where !removedRequests.contains(request.id) {
+
+            do {
+
+                _ = try await database.deleteRecord(withID: request.id)
+                removedRequests.insert(request.id)
+            }
+            catch {
+
+                // Left in the queue otherwise: processing it later finds the report gone and removes it.
+                if CloudKitErrorHandler.isRecordMissing(error) { removedRequests.insert(request.id) }
+            }
+        }
+
+        let imageURLs = Set(([report] + myReports + allReports).filter { $0.id == report.id }.flatMap(\.imageURLs))
+
+        Self.removeCachedCopies(reportName: reportName, imageURLs: Array(imageURLs))
+
+        guard started == generation else { return }
+
+        removeLocally(report.id)
+        threadFollowUps[reportName] = nil
+        followUpActivity[reportName] = nil
+        pendingDeletionRequests.removeAll { removedRequests.contains($0.id) }
+        myDeletionRequests.removeAll { removedRequests.contains($0.id) }
+    }
+
+    /// Deletes the report's local copies: the images `loadDetail` copied out, and the files
+    /// `downloadFile` saved under `FeedbackFiles`. Only paths this service creates are touched.
+    nonisolated static func removeCachedCopies(reportName: String, imageURLs: [URL]) {
+
+        let fileManager = FileManager.default
+
+        for url in imageURLs where PrivateReportDeletion.isCachedImageCopy(url) {
+
+            try? fileManager.removeItem(at: url)
+        }
+
+        let filesDirectory = fileManager.temporaryDirectory.appendingPathComponent("FeedbackFiles", isDirectory: true)
+
+        guard let entries = try? fileManager.contentsOfDirectory(atPath: filesDirectory.path) else { return }
+
+        for entry in entries where PrivateReportDeletion.isCachedFileDirectory(entry, reportName: reportName) {
+
+            try? fileManager.removeItem(at: filesDirectory.appendingPathComponent(entry, isDirectory: true))
+        }
+    }
+
     /// Every report created by `requesterID`, by CloudKit's own creator reference. All pages.
     private func reportIDs(createdBy requesterID: String) async throws -> [CKRecord.ID] {
 
