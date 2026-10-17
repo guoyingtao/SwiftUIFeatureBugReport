@@ -589,7 +589,17 @@ import Observation
 
         guard !ids.isEmpty else { return [] }
 
-        let results = try await database.records(for: ids, desiredKeys: [])
+        // Chunked: an app-scoped request names every report in that app, which can exceed CloudKit's
+        // per-operation limit and would otherwise fail on every retry.
+        var results: [(CKRecord.ID, Result<CKRecord, any Error>)] = []
+
+        for chunk in ids.chunked(into: CloudKitBatch.maximumOperationSize) {
+
+            let fetched = try await database.records(for: chunk, desiredKeys: [])
+
+            results.append(contentsOf: fetched.map { ($0.key, $0.value) })
+        }
+
         let me = container.currentUserRecordID
 
         var owners: [String: String] = [:]

@@ -73,6 +73,9 @@ public struct DeveloperPortalView: View {
     public var body: some View {
 
         container
+            // The version picker lists only the selected app's versions; a version kept from the
+            // previous app would silently empty the queue (or hide the picker that could clear it).
+            .onChange(of: appFilter) { _, _ in versionFilter = nil }
             .task {
 
                 if !store.requests.hasLoadedOnce { await store.start() }
@@ -208,9 +211,12 @@ public struct DeveloperPortalView: View {
             .feedbackRefreshable { await store.load() }
             .toolbar {
 
-                ToolbarItem(placement: toolbarTrailingPlacement) {
+                if AppFilterPicker.isVisible(selection: appFilter, appIDs: store.requests.requests.map(\.appID)) {
 
-                    AppFilterPicker(selection: $appFilter, appIDs: store.requests.requests.map(\.appID))
+                    ToolbarItem(placement: toolbarTrailingPlacement) {
+
+                        AppFilterPicker(selection: $appFilter, appIDs: store.requests.requests.map(\.appID))
+                    }
                 }
 
                 if !availableVersions.isEmpty {

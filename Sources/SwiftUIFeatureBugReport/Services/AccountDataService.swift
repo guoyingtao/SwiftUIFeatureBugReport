@@ -286,8 +286,9 @@ public struct MyDataCounts: Sendable, Equatable {
         return AppDataScoping.filter(scoped, parentAppIDs: parentAppIDs, scope: scope).compactMap { byName[$0.name] }
     }
 
-    /// `appID` of each named request that exists and has one. A request that is gone is left out, so
-    /// its orphaned children read as unscoped.
+    /// `appID` of each named request that exists and has one. A request CloudKit confirms is gone is
+    /// left out, so its orphaned children read as unscoped. Any other per-record failure throws: guessing
+    /// would let a transient error put another app's records in (or this app's records out of) scope.
     private func requestAppIDs(_ names: Set<String>) async throws -> [String: String] {
 
         var result: [String: String] = [:]
@@ -298,8 +299,19 @@ public struct MyDataCounts: Sendable, Equatable {
 
             for (id, outcome) in fetched {
 
-                guard case .success(let record) = outcome,
-                      let appID = AppScope.normalized(record[FieldKey.appID] as? String) else { continue }
+                let record: CKRecord
+
+                switch outcome {
+
+                case .success(let fetchedRecord):
+                    record = fetchedRecord
+
+                case .failure(let error):
+                    if CloudKitErrorHandler.isRecordMissing(error) { continue }
+                    throw error
+                }
+
+                guard let appID = AppScope.normalized(record[FieldKey.appID] as? String) else { continue }
 
                 result[id.recordName] = appID
             }
@@ -340,10 +352,19 @@ public struct MyDataCounts: Sendable, Equatable {
                                                       desiredKeys: desiredKeys)
                 }
 
-                // A single record that failed to load is skipped, as before; the query itself failing throws.
+                // A record that vanished between query and load is skipped; any other per-record
+                // failure throws, so a deletion never reports completion with that record still stored.
                 for (_, result) in page.matchResults {
 
-                    if case .success(let record) = result { collected.append(record) }
+                    switch result {
+
+                    case .success(let record):
+                        collected.append(record)
+
+                    case .failure(let recordError):
+                        if CloudKitErrorHandler.isRecordMissing(recordError) { continue }
+                        throw recordError
+                    }
                 }
 
                 cursor = page.queryCursor

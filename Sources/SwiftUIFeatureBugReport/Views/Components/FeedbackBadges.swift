@@ -234,11 +234,19 @@ struct AppFilterPicker: View {
 
     let appIDs: [String?]
 
+    /// Whether the picker renders anything. Shown when there is more than one app to choose between
+    /// (`choices` always includes `.all`), or a non-default selection is in effect so it can be cleared.
+    /// Callers that wrap the picker (a `ToolbarItem`) use this to avoid an empty item.
+    static func isVisible(selection: AppFilter, appIDs: [String?]) -> Bool {
+
+        AppFilter.choices(for: appIDs).count > 2 || selection != .all
+    }
+
     var body: some View {
 
         let choices = AppFilter.choices(for: appIDs)
 
-        if choices.count > 2 || selection != .all {
+        if Self.isVisible(selection: selection, appIDs: appIDs) {
 
             Picker("App", selection: $selection) {
 

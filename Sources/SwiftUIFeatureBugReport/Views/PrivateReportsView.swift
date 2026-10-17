@@ -313,13 +313,43 @@ struct PrivateReportDetailView: View {
     @State private var showingDeletionConfirmation = false
     @State private var isRequestingDeletion = false
 
+    @Environment(\.dismiss) private var dismiss
+
     private let scope: PrivateReportScope
+
+    /// The identity that opened this report. `PrivateReportService.reset()` cannot clear the snapshot
+    /// held here, so the content is only shown while this is still the signed-in identity. `@State`
+    /// so a re-created view value keeps the first identity instead of adopting the new one.
+    @State private var openedBy: String?
 
     init(store: FeedbackStore, report: PrivateReport, scope: PrivateReportScope) {
 
         _store = State(initialValue: store)
         _report = State(initialValue: report)
         self.scope = scope
+        _openedBy = State(initialValue: store.container.currentUserRecordID)
+    }
+
+    /// False while identity is resolving and after a sign-out or account switch.
+    private var belongsToCurrentIdentity: Bool {
+
+        store.container.identityState == .ready && store.container.currentUserRecordID == openedBy
+    }
+
+    /// Once identity has settled on someone else (or no one), leave rather than keep a redacted screen.
+    private func dismissIfIdentityChanged() {
+
+        guard store.container.identityState != .resolving, !belongsToCurrentIdentity else { return }
+
+        dismiss()
+    }
+
+    /// Reloads the report, dropping the result if the identity changed while it was in flight.
+    private func reloadDetail() async {
+
+        let loaded = await store.privateReports.loadDetail(report)
+
+        if belongsToCurrentIdentity { report = loaded }
     }
 
     /// The portal's controls are offered to a developer in the developer's queue. The `dev` role is
@@ -335,67 +365,81 @@ struct PrivateReportDetailView: View {
 
         Form {
 
-            Section {
+            if belongsToCurrentIdentity {
 
-                Text(report.title)
-                    .font(.headline)
-                    .textSelection(.enabled)
-
-                HStack(spacing: 6) {
-
-                    TypeBadge(type: report.kind)
-                    StatusBadge(status: report.status)
-                }
-
-                Text(report.body)
-                    .textSelection(.enabled)
-
-            } footer: { Label("Only you and the developer can see this.", systemImage: "lock") }
-
-            if !report.imageURLs.isEmpty {
-
-                Section { ImageGallery(urls: report.imageURLs) }
+                reportSections
             }
+            else {
 
-            Section {
-
-                if report.replies.isEmpty {
-
-                    Text("No replies yet.")
-                        .foregroundStyle(.secondary)
-                }
-                else {
-
-                    ForEach(Array(report.replies.enumerated()), id: \.offset) { _, reply in
-
-                        VStack(alignment: .leading, spacing: 3) {
-
-                            Text(reply.message)
-                                .textSelection(.enabled)
-
-                            Text(reply.createdAt, format: .relative(presentation: .named))
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                }
-
-            } header: { Text("Developer replies") }
-
-            if showsDeveloperControls { developerSections }
-
-            if scope == .mine { deletionSection }
-
-            if let error {
-
-                Section { FeedbackErrorBanner(error: error, retry: nil) }
+                Section { IdentityResolvingView() }
             }
         }
         .formStyle(.grouped)
         // Never renames a Mac host window - see `ownedNavigationTitle`.
         .ownedNavigationTitle(title, ownsStack: false)
         .inlineNavigationTitle()
-        .task { report = await store.privateReports.loadDetail(report) }
+        .onChange(of: store.container.identityState) { _, _ in dismissIfIdentityChanged() }
+        .onChange(of: store.container.currentUserRecordID) { _, _ in dismissIfIdentityChanged() }
+        .task { await reloadDetail() }
+    }
+
+    @ViewBuilder private var reportSections: some View {
+
+        Section {
+
+            Text(report.title)
+                .font(.headline)
+                .textSelection(.enabled)
+
+            HStack(spacing: 6) {
+
+                TypeBadge(type: report.kind)
+                StatusBadge(status: report.status)
+            }
+
+            Text(report.body)
+                .textSelection(.enabled)
+
+        } footer: { Label("Only you and the developer can see this.", systemImage: "lock") }
+
+        if !report.imageURLs.isEmpty {
+
+            Section { ImageGallery(urls: report.imageURLs) }
+        }
+
+        Section {
+
+            if report.replies.isEmpty {
+
+                Text("No replies yet.")
+                    .foregroundStyle(.secondary)
+            }
+            else {
+
+                ForEach(Array(report.replies.enumerated()), id: \.offset) { _, reply in
+
+                    VStack(alignment: .leading, spacing: 3) {
+
+                        Text(reply.message)
+                            .textSelection(.enabled)
+
+                        Text(reply.createdAt, format: .relative(presentation: .named))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+
+        } header: { Text("Developer replies") }
+
+        if showsDeveloperControls { developerSections }
+
+        if scope == .mine { deletionSection }
+
+        if let error {
+
+            Section { FeedbackErrorBanner(error: error, retry: nil) }
+        }
     }
 
     /// Submitters cannot delete a private report - `_creator` has READ only, so that they cannot rewrite
@@ -528,7 +572,7 @@ struct PrivateReportDetailView: View {
 
                 // Reloaded rather than patched: a status-only edit to this copy would keep stale
                 // replies and activity if a reply landed while the save was in flight.
-                report = await store.privateReports.loadDetail(report)
+                await reloadDetail()
             }
             catch {
 
@@ -551,7 +595,7 @@ struct PrivateReportDetailView: View {
                 try await store.privateReports.reply(to: report, message: message)
 
                 replyText = ""
-                report = await store.privateReports.loadDetail(report)
+                await reloadDetail()
             }
             catch {
 
