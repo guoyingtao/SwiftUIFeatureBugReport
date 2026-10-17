@@ -5,6 +5,9 @@
 
 import CloudKit
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 public struct FeedbackFormView: View {
 
@@ -193,6 +196,10 @@ public struct FeedbackFormView: View {
             }
         }
         .formStyle(.grouped)
+#if os(iOS)
+        // Long bodies push the submit row under the keyboard; let a drag or the Done key dismiss it.
+        .scrollDismissesKeyboard(.interactively)
+#endif
         .navigationTitle("New Feedback")
         .inlineNavigationTitle()
         .toolbar {
@@ -201,6 +208,17 @@ public struct FeedbackFormView: View {
 
                 Button("Cancel", role: .cancel) { dismiss() }
             }
+
+#if os(iOS)
+            ToolbarItemGroup(placement: .keyboard) {
+
+                Spacer()
+                Button("Done") {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                                    to: nil, from: nil, for: nil)
+                }
+            }
+#endif
 
 #if os(macOS)
             // Native sheet convention: primary action bottom-right, not a full-width row inside the form.
