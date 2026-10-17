@@ -154,10 +154,15 @@ struct ImageAttachmentPicker: View {
 }
 
 
-/// Read-only gallery for a request's approved images.
+/// Gallery for a request's approved images, or a private report's images.
+///
+/// With `onDelete` - the developer portal's private report detail only - every image gets a trash
+/// button and a context menu item. The caller confirms before anything is removed.
 struct ImageGallery: View {
 
     let urls: [URL]
+
+    var onDelete: ((Int) -> Void)? = nil
 
     var body: some View {
 
@@ -167,12 +172,13 @@ struct ImageGallery: View {
             // ideal height of the full asset, which on the Mac grew the enclosing `Form` past the
             // window and left its scroll view unable to reach anything below the image - the
             // approve/reject buttons among them.
-            image
+            deletable(image
                 .resizable()
                 .scaledToFit()
                 .frame(maxWidth: .infinity, maxHeight: 220)
                 .clipShape(.rect(cornerRadius: 8))
-                .accessibilityLabel(Text("Image attached to this request"))
+                .accessibilityLabel(Text("Image attached to this request")),
+                      index: 0)
         }
         else {
 
@@ -184,16 +190,46 @@ struct ImageGallery: View {
 
                         if let image = FeedbackImage.image(at: url) {
 
-                            image
+                            deletable(image
                                 .resizable()
                                 .scaledToFit()
                                 .frame(maxHeight: 220)
                                 .clipShape(.rect(cornerRadius: 8))
-                                .accessibilityLabel(Text("Image \(index + 1) of \(urls.count)"))
+                                .accessibilityLabel(Text("Image \(index + 1) of \(urls.count)")),
+                                      index: index)
                         }
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder private func deletable(_ content: some View, index: Int) -> some View {
+
+        if let onDelete {
+
+            content
+                .overlay(alignment: .topTrailing) {
+
+                    Button(role: .destructive, action: { onDelete(index) }) {
+
+                        Image(systemName: "trash.circle.fill")
+                            .font(.title2)
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, .red)
+                    }
+                    .buttonStyle(.borderless)
+                    .padding(6)
+                    .accessibilityLabel(Text("Remove image \(index + 1)"))
+                }
+                .contextMenu {
+
+                    Button(role: .destructive, action: { onDelete(index) }) { Label("Remove image", systemImage: "trash") }
+                }
+        }
+        else {
+
+            content
         }
     }
 }

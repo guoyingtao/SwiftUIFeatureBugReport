@@ -689,6 +689,166 @@ import Observation
         }
     }
 
+    // MARK: - Removing attachments
+
+    /// How many times `removeAttachment` refetches and tries again after losing a save race.
+    static let attachmentRemovalRetries = 2
+
+    /// Developer only: removes one file or image from a report, to save storage. The report, its
+    /// replies, status and follow-ups are kept.
+    ///
+    /// Only the attachment fields are fetched, and only they are saved: CloudKit sends a record's
+    /// changed keys, so `replies` and `status` are neither read nor written - unless the report has
+    /// never been written by a developer, when they are reset exactly as `mutate` does. This save makes
+    /// the developer the last modifier, which would otherwise turn creator-supplied "replies" into
+    /// trusted ones (see `PrivateReportTrust`).
+    ///
+    /// Saved with `.ifServerRecordUnchanged`, never `.changedKeys`: a position means nothing once the
+    /// list has changed, so a concurrent save makes this refetch, check that the same attachment is
+    /// still at that position, and try again (`attachmentRemovalRetries` times). `lastActivityAt` is
+    /// left alone - a removal is not conversation activity.
+    ///
+    /// - Returns: `report` without the attachment, also swapped into the local lists.
+    @discardableResult
+    public func removeAttachment(_ attachment: PrivateAttachment, from report: PrivateReport) async throws -> PrivateReport {
+
+        guard container.isDeveloper else { throw FeedbackError.developerOnly }
+
+        let started = generation
+
+        let keys: [String]
+
+        switch attachment {
+
+        case .file: keys = [FieldKey.files, FieldKey.fileNames, FieldKey.fileSizes]
+        case .image: keys = [FieldKey.images]
+        }
+
+        var attempt = 0
+
+        while true {
+
+            do {
+
+                // Fetches the assets that stay, too - a list field can only be saved whole.
+                let record = try await fetchRecord(report.id, desiredKeys: keys)
+
+                let resetsUntrustedFields = !PrivateReportTrust.isDeveloperModified(record,
+                                                                                    developerUserRecordIDs: container.configuration.developerUserRecordIDs,
+                                                                                    currentUserRecordID: container.currentUserRecordID)
+
+                if resetsUntrustedFields {
+
+                    record[FieldKey.replies] = [String]()
+                    record[FieldKey.status] = PrivateReportTrust.initialStatus.rawValue
+                }
+
+                var updated = report
+                var removedImageURL: URL?
+
+                switch attachment {
+
+                case .file(let file):
+                    let assets = record[FieldKey.files] as? [CKAsset] ?? []
+                    let names = record[FieldKey.fileNames] as? [String] ?? []
+                    let sizes = (record[FieldKey.fileSizes] as? [NSNumber])?.map(\.int64Value) ?? []
+
+                    let (keptAssets, keptNames, keptSizes) = try ParallelLists.removing(at: file.index, from: assets, names, sizes)
+
+                    guard ParallelLists.matches(file, names: names, sizes: sizes) else { throw AttachmentRemovalError.changed }
+
+                    // Cleared rather than left as empty lists once the last file goes.
+                    let assetsValue: [CKAsset]? = keptAssets.isEmpty ? nil : keptAssets
+                    let namesValue: [String]? = keptNames.isEmpty ? nil : keptNames
+                    let sizesValue: [NSNumber]? = keptSizes.isEmpty ? nil : keptSizes.map { NSNumber(value: $0) }
+
+                    record[FieldKey.files] = assetsValue
+                    record[FieldKey.fileNames] = namesValue
+                    record[FieldKey.fileSizes] = sizesValue
+
+                    updated.files = PrivateFile.list(names: keptNames, sizes: keptSizes, assetCount: keptAssets.count)
+
+                case .image(let index, let count):
+                    let assets = record[FieldKey.images] as? [CKAsset] ?? []
+                    let kept = try ParallelLists.removing(at: index, from: assets, expectedCount: count)
+
+                    // Only after the count check: the local copies match the record one for one.
+                    guard index < updated.imageURLs.count else { throw AttachmentRemovalError.changed }
+
+                    let imagesValue: [CKAsset]? = kept.isEmpty ? nil : kept
+
+                    record[FieldKey.images] = imagesValue
+
+                    removedImageURL = updated.imageURLs.remove(at: index)
+                }
+
+                try await saveIfUnchanged(record)
+
+                // The local copy of a removed image is no longer shown anywhere.
+                if let removedImageURL { try? FileManager.default.removeItem(at: removedImageURL) }
+
+                if resetsUntrustedFields {
+
+                    updated.replies = []
+                    updated.status = PrivateReportTrust.initialStatus
+                }
+
+                if started == generation { patchAttachmentsLocally(updated, resetsUntrustedFields: resetsUntrustedFields) }
+
+                return updated
+            }
+            catch let refusal as AttachmentRemovalError {
+
+                throw refusal
+            }
+            catch {
+
+                if CloudKitErrorHandler.isServerRecordChanged(error), attempt < Self.attachmentRemovalRetries {
+
+                    attempt += 1
+                    continue
+                }
+
+                throw CloudKitErrorHandler.classify(error)
+            }
+        }
+    }
+
+    /// Saves one record with `.ifServerRecordUnchanged`, surfacing its own per-record error.
+    private func saveIfUnchanged(_ record: CKRecord) async throws {
+
+        let results = try await database.modifyRecords(saving: [record],
+                                                       deleting: [],
+                                                       savePolicy: .ifServerRecordUnchanged,
+                                                       atomically: true)
+
+        guard let result = results.saveResults[record.recordID] else { throw CKError(.unknownItem) }
+
+        _ = try result.get()
+    }
+
+    /// Updates only the attachments (and, after a trust reset, `replies`/`status`) of the listed copies,
+    /// keeping whatever else they hold - they may be fresher than the detail's copy.
+    private func patchAttachmentsLocally(_ updated: PrivateReport, resetsUntrustedFields: Bool) {
+
+        func patch(_ list: inout [PrivateReport]) {
+
+            guard let index = list.firstIndex(where: { $0.id == updated.id }) else { return }
+
+            list[index].files = updated.files
+            list[index].imageURLs = updated.imageURLs
+
+            if resetsUntrustedFields {
+
+                list[index].replies = []
+                list[index].status = PrivateReportTrust.initialStatus
+            }
+        }
+
+        patch(&myReports)
+        patch(&allReports)
+    }
+
     /// Fetch, change, save - so a write never clobbers fields this client did not load. Bumps
     /// `lastActivityAt`. A concurrent edit surfaces as an error rather than being overwritten.
     private func mutate(_ report: PrivateReport, _ change: (CKRecord) -> Void) async throws {

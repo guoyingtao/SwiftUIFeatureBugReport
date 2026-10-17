@@ -150,10 +150,15 @@ struct FileAttachmentPicker: View {
 /// Tapping a row downloads that one file (`PrivateReportService.downloadFile`), copies it under its
 /// original name and opens it in Quick Look. Once downloaded, a share button exports it - to Files,
 /// Books or anywhere else.
+///
+/// With `onDelete` - the developer portal only - each row also gets a trash button, a swipe action and
+/// a context menu item. The caller confirms before anything is removed.
 struct PrivateFileList: View {
 
     let store: FeedbackStore
     let report: PrivateReport
+
+    var onDelete: ((PrivateFile) -> Void)? = nil
 
     @State private var downloaded: [Int: URL] = [:]
     @State private var downloading: Set<Int> = []
@@ -168,6 +173,12 @@ struct PrivateFileList: View {
 
         } header: { Text("Files") }
           .quickLookPreview($previewURL)
+          // Positions shift when a file is removed, so per-position state would point at the wrong file.
+          .onChange(of: report.files) { _, _ in
+
+              downloaded = [:]
+              failures = [:]
+          }
     }
 
     @ViewBuilder private func row(for file: PrivateFile) -> some View {
@@ -220,7 +231,16 @@ struct PrivateFileList: View {
                     .buttonStyle(.borderless)
                     .accessibilityLabel(Text("Share \(file.name)"))
             }
+
+            if let onDelete {
+
+                Button(role: .destructive, action: { onDelete(file) }) { Image(systemName: "trash") }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.red)
+                    .accessibilityLabel(Text("Remove \(file.name)"))
+            }
         }
+        .modifier(PrivateFileDeleteActions(file: file, onDelete: onDelete))
     }
 
     private func open(_ file: PrivateFile) {
@@ -249,6 +269,34 @@ struct PrivateFileList: View {
             }
 
             downloading.remove(file.index)
+        }
+    }
+}
+
+
+/// The swipe action and context menu item of a removable file row. Nothing without `onDelete`.
+private struct PrivateFileDeleteActions: ViewModifier {
+
+    let file: PrivateFile
+    let onDelete: ((PrivateFile) -> Void)?
+
+    @ViewBuilder func body(content: Content) -> some View {
+
+        if let onDelete {
+
+            content
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+
+                    Button(role: .destructive, action: { onDelete(file) }) { Label("Remove", systemImage: "trash") }
+                }
+                .contextMenu {
+
+                    Button(role: .destructive, action: { onDelete(file) }) { Label("Remove file", systemImage: "trash") }
+                }
+        }
+        else {
+
+            content
         }
     }
 }

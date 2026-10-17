@@ -219,6 +219,9 @@ FeedbackConfiguration(
 - In both the user's own report and the portal, files show as rows with an icon, name and size.
   Tapping one downloads only that file, saves it under its original name and opens it in Quick Look.
   A share button then exports it to Files, Books and so on.
+- In the portal, the developer can remove a single file or image from a private report (trash button,
+  swipe or context menu, then a confirmation) to save iCloud storage. The report, its status and the
+  conversation are kept; the sender no longer sees the removed attachment.
 - This needs the `files`, `fileNames` and `fileSizes` fields on `PrivateReport`. Import the updated
   schema before turning it on. See [Schema and permissions](Docs/Schema-and-Permissions.md).
 

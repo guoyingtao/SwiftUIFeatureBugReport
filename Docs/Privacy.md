@@ -80,6 +80,11 @@ inside a user's book file). Say so in your privacy policy if you turn this on, a
 as the user's personal content. Opened files are copied to the app's temporary directory and are cleared
 by the system. Deleting a private report deletes its files with it.
 
+The developer can also remove a single file or image from a private report in the portal, for example
+to save storage once a problem is solved. Only that attachment is deleted, for both sides; the report,
+its status and the conversation stay. The submitter cannot do this themselves (`_creator` has READ
+only), so a user who wants one attachment gone asks the developer in the conversation.
+
 ### Conversations
 
 A private report is a conversation between its sender and the developer, shown as one thread on both

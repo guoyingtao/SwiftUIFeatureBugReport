@@ -465,6 +465,10 @@ struct PrivateReportDetailView: View {
     @State private var showingDeletionConfirmation = false
     @State private var isRequestingDeletion = false
 
+    /// The attachment the developer asked to remove, awaiting confirmation.
+    @State private var pendingRemoval: PrivateAttachment?
+    @State private var isRemovingAttachment = false
+
     @Environment(\.dismiss) private var dismiss
 
     private let scope: PrivateReportScope
@@ -533,6 +537,16 @@ struct PrivateReportDetailView: View {
         .onChange(of: store.container.identityState) { _, _ in dismissIfIdentityChanged() }
         .onChange(of: store.container.currentUserRecordID) { _, _ in dismissIfIdentityChanged() }
         .task { await reloadDetail() }
+        .confirmationDialog(removalTitle,
+                            isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
+                            titleVisibility: .visible,
+                            presenting: pendingRemoval) { attachment in
+
+            Button("Remove", role: .destructive) { removeAttachment(attachment) }
+
+            Button("Cancel", role: .cancel) { }
+
+        } message: { _ in Text("It is deleted for the sender too. The report and its conversation are kept. This can't be undone.") }
     }
 
     @ViewBuilder private var reportSections: some View {
@@ -556,10 +570,13 @@ struct PrivateReportDetailView: View {
 
         if !report.imageURLs.isEmpty {
 
-            Section { ImageGallery(urls: report.imageURLs) }
+            Section {
+
+                ImageGallery(urls: report.imageURLs, onDelete: imageRemovalAction)
+            }
         }
 
-        if !report.files.isEmpty { PrivateFileList(store: store, report: report) }
+        if !report.files.isEmpty { PrivateFileList(store: store, report: report, onDelete: fileRemovalAction) }
 
         conversationSection
 
@@ -776,6 +793,69 @@ struct PrivateReportDetailView: View {
             LabeledContent { Text(report.creatorID).textSelection(.enabled) } label: { Text("Sender") }
 
         } header: { Text("Details") }
+    }
+
+    // MARK: - Removing attachments
+
+    /// Only in the portal, and not while a removal is in flight - positions shift once it lands.
+    private var removesAttachments: Bool { showsDeveloperControls && !isRemovingAttachment }
+
+    /// Asks for confirmation first - see `confirmationDialog` in `body`. `nil` hides the controls.
+    private var imageRemovalAction: ((Int) -> Void)? {
+
+        guard removesAttachments else { return nil }
+
+        let count = report.imageURLs.count
+
+        return { index in pendingRemoval = .image(index: index, count: count) }
+    }
+
+    private var fileRemovalAction: ((PrivateFile) -> Void)? {
+
+        guard removesAttachments else { return nil }
+
+        return { file in pendingRemoval = .file(file) }
+    }
+
+    private var removalTitle: Text {
+
+        switch pendingRemoval {
+
+        case .file(let file): return Text("Remove “\(file.name)”?")
+        case .image, nil: return Text("Remove this image?")
+        }
+    }
+
+    /// Developer only: deletes one attachment to save storage. Patched in rather than reloaded, so the
+    /// remaining images are not downloaded again.
+    private func removeAttachment(_ attachment: PrivateAttachment) {
+
+        pendingRemoval = nil
+        isRemovingAttachment = true
+        error = nil
+
+        Task {
+
+            do {
+
+                let updated = try await store.privateReports.removeAttachment(attachment, from: report)
+
+                if belongsToCurrentIdentity { report = updated }
+            }
+            catch let refusal as AttachmentRemovalError {
+
+                // Something else changed the attachments: show what is there now.
+                if refusal.isStale { await reloadDetail() }
+
+                self.error = .underlying(refusal.errorDescription ?? "")
+            }
+            catch {
+
+                self.error = error as? FeedbackError ?? CloudKitErrorHandler.classify(error)
+            }
+
+            isRemovingAttachment = false
+        }
     }
 
     private func setStatus(_ status: RequestStatus) {

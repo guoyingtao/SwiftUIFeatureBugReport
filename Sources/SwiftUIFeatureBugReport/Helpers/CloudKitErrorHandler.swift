@@ -147,6 +147,22 @@ enum CloudKitErrorHandler {
         return false
     }
 
+    /// The save lost a race: someone else saved the record after it was fetched
+    /// (`.ifServerRecordUnchanged`). Also found inside a `.partialFailure`.
+    static func isServerRecordChanged(_ error: Error) -> Bool {
+
+        guard let ckError = error as? CKError else { return false }
+
+        if ckError.code == .serverRecordChanged { return true }
+
+        if ckError.code == .partialFailure {
+
+            return partialErrors(in: ckError).values.contains { isServerRecordChanged($0) }
+        }
+
+        return false
+    }
+
     static func isBatchTooLarge(_ error: Error) -> Bool {
 
         guard let ckError = error as? CKError else { return false }
