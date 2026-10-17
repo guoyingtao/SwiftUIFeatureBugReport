@@ -55,9 +55,18 @@ import Observation
 
         var fetched: [FeedbackComment] = []
         var cursor: CKQueryOperation.Cursor?
+        var pages = 0
 
         // Paged like `VoteService.loadTallies()`: a single page dropped replies on busy requests.
         repeat {
+
+            guard pages < CloudKitErrorHandler.maxQueryPages else {
+
+                self.error = CloudKitErrorHandler.incompleteLoad
+                break
+            }
+
+            pages += 1
 
             do {
 
@@ -70,6 +79,12 @@ import Observation
                 else {
 
                     page = try await database.records(matching: query)
+                }
+
+                // Keep the comments that loaded; surface any that failed for a reason other than deletion.
+                if let failure = CloudKitErrorHandler.firstMatchFailure(in: page.matchResults) {
+
+                    self.error = failure
                 }
 
                 fetched += page.matchResults

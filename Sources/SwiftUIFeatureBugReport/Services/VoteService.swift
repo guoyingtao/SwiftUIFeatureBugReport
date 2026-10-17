@@ -63,8 +63,17 @@ import Observation
         query.sortDescriptors = [NSSortDescriptor(key: FieldKey.creationDate, ascending: false)]
 
         var cursor: CKQueryOperation.Cursor?
+        var pages = 0
 
         repeat {
+
+            guard pages < CloudKitErrorHandler.maxQueryPages else {
+
+                loadError = CloudKitErrorHandler.incompleteLoad
+                break
+            }
+
+            pages += 1
 
             do {
 
@@ -77,6 +86,12 @@ import Observation
                 else {
 
                     page = try await database.records(matching: query, desiredKeys: [FieldKey.request])
+                }
+
+                // Count the votes that loaded, but flag the tally as low if any entry failed.
+                if let failure = CloudKitErrorHandler.firstMatchFailure(in: page.matchResults) {
+
+                    loadError = failure
                 }
 
                 for (_, result) in page.matchResults {
@@ -211,9 +226,15 @@ import Observation
 
         var voters: Set<String> = []
         var cursor: CKQueryOperation.Cursor?
+        var pages = 0
 
         // Paged like `loadTallies()`: a single page silently dropped voters beyond the first batch.
         repeat {
+
+            // Notify whoever was found so far rather than looping on a continuation that never ends.
+            guard pages < CloudKitErrorHandler.maxQueryPages else { break }
+
+            pages += 1
 
             do {
 
