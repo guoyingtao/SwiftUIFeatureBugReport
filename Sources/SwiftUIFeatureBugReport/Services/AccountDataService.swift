@@ -44,6 +44,13 @@ public struct MyDataCounts: Sendable, Equatable {
         self.container = container
     }
 
+    /// The app scope "My data" works in: the configuration's, so counts and deletion cover only this
+    /// app's records when `appID` is set, and the whole account when it is `nil`. See `AppDataScoping`.
+    public var scope: AppScope { container.configuration.appScope }
+
+    /// Whether counts and deletion are limited to this app (`appID` set) rather than account-wide.
+    public var isAppScoped: Bool { scope.appID != nil }
+
     public func loadCounts() async {
 
         guard let me = container.currentUserRecordID else { return }
@@ -53,22 +60,31 @@ public struct MyDataCounts: Sendable, Equatable {
 
         defer { isLoading = false }
 
-        async let requests = recordIDs(ofType: RecordType.request, createdBy: me).count
-        async let votes = recordIDs(ofType: RecordType.vote, createdBy: me).count
-        async let comments = commentRecordIDs(createdBy: me).count
-        async let reports = recordIDs(ofType: RecordType.report, createdBy: me).count
-        async let privateReports = privateReportCount(createdBy: me)
-        async let privateDeletionRequested = hasPendingPrivateDeletion(createdBy: me)
+        let scope = self.scope
+
+        async let requests = recordIDs(ofType: RecordType.request, createdBy: me, scope: scope).count
+        async let votes = recordIDs(ofType: RecordType.vote, createdBy: me, scope: scope).count
+        async let comments = commentRecordIDs(createdBy: me, scope: scope).count
+        async let reports = recordIDs(ofType: RecordType.report, createdBy: me, scope: scope).count
+        async let privateStatus = privateStatus(createdBy: me, scope: scope)
+
+        let (privateReports, privateDeletionRequested) = await privateStatus
 
         counts = MyDataCounts(requests: await requests,
                               votes: await votes,
                               comments: await comments,
                               reports: await reports,
-                              privateReports: await privateReports,
-                              privateDeletionRequested: await privateDeletionRequested)
+                              privateReports: privateReports,
+                              privateDeletionRequested: privateDeletionRequested)
     }
 
     /// Real deletion (§6.8).
+    ///
+    /// **Per app when `appID` is set.** Only records of this app are deleted - by the same rule the
+    /// board uses, so unscoped legacy records go only if `includeUnscopedRecords` is on. Records without
+    /// an `appID` of their own (replies, reports, follows) are scoped through the request they belong to.
+    /// The user's data in other apps sharing the container stays, and is deleted from those apps. With
+    /// `appID` `nil` this is account-wide, as before.
     ///
     /// Deleting a request takes other people's votes and comments on it with it, because every child
     /// reference uses `.deleteSelf`. That is the intended behaviour - the point is honouring the
@@ -87,12 +103,16 @@ public struct MyDataCounts: Sendable, Equatable {
             return
         }
 
-        await delete(creatorID: me)
+        await delete(creatorID: me, scope: scope)
     }
 
     /// The same operation the portal offers, keyed by `creatorID`, so a developer can act on a
     /// deletion request that arrived by email.
-    public func delete(creatorID: String) async {
+    ///
+    /// `scope` defaults to `.unscoped`: the portal sees every app, and a developer honouring an
+    /// erasure request should remove the person's data everywhere. "Delete my data" passes the app's
+    /// own scope instead.
+    public func delete(creatorID: String, scope: AppScope = .unscoped) async {
 
         isDeleting = true
         error = nil
@@ -101,19 +121,28 @@ public struct MyDataCounts: Sendable, Equatable {
 
         do {
 
+            // Every list is read *before* anything is deleted: once a request is gone its children can
+            // no longer be traced to an app, and a per-app pass would miss or misplace them.
+            let requestIDs = try await scopedRecordIDs(ofType: RecordType.request, createdBy: creatorID, scope: scope)
+            let commentIDs = container.configuration.allowComments
+                ? try await scopedRecordIDs(ofType: RecordType.comment, createdBy: creatorID, scope: scope)
+                : []
+            let reportIDs = try await scopedRecordIDs(ofType: RecordType.report, createdBy: creatorID, scope: scope)
+            let followIDs = try await scopedRecordIDs(ofType: RecordType.follow, createdBy: creatorID, scope: scope)
+
             // Requests first: `.deleteSelf` cascades their votes, comments, reports, activity and
             // metadata, so the later passes have less to do.
-            try await CloudKitBatch.delete(await recordIDs(ofType: RecordType.request, createdBy: creatorID), in: database)
+            try await CloudKitBatch.delete(requestIDs, in: database)
 
             // Then the text this user left on *other people's* requests. Votes are not in this list -
             // see the note above.
-            try await CloudKitBatch.delete(await commentRecordIDs(createdBy: creatorID), in: database)
-            try await CloudKitBatch.delete(await recordIDs(ofType: RecordType.report, createdBy: creatorID), in: database)
+            try await CloudKitBatch.delete(commentIDs, in: database)
+            try await CloudKitBatch.delete(reportIDs, in: database)
 
             // Follows go, unlike votes. A follow changes nothing anyone else can see - it only says
             // this person wanted to hear about a request - so removing it rewrites no shared state,
             // and leaving it would keep notifying an account whose data is supposed to be gone.
-            try await CloudKitBatch.delete(await recordIDs(ofType: RecordType.follow, createdBy: creatorID), in: database)
+            try await CloudKitBatch.delete(followIDs, in: database)
 
             // Private reports are this user's own text and images, handled whatever `privateFeedback`
             // says now: turning new submissions off must not leave earlier ones undeletable. A schema
@@ -121,26 +150,35 @@ public struct MyDataCounts: Sendable, Equatable {
             //
             // Only the `dev` role may delete them - `_creator` has READ only, so a submitter cannot
             // rewrite the developer's replies. A submitter therefore *requests* deletion, which the
-            // developer processes from the private reports queue.
-            let privateIDs = try await privateReportIDs(createdBy: creatorID)
+            // developer processes from the private reports queue. Per app, that request names this
+            // app's reports rather than asking for `.all`.
+            let privateIDs = try await scopedRecordIDs(ofType: RecordType.privateReport, createdBy: creatorID,
+                                                       scope: scope, throwsOnMissingType: false)
             var deletionRequested = false
 
             if container.isDeveloper {
 
                 try await CloudKitBatch.delete(privateIDs, in: database)
-                try await CloudKitBatch.delete(try await deletionRequestIDs(createdBy: creatorID), in: database)
-            }
-            else if !privateIDs.isEmpty && creatorID == container.currentUserRecordID {
 
-                try await PrivateReportService.saveDeletionRequest(scope: .all,
-                                                                   reportNames: [],
+                let pending = try await deletionRequests(createdBy: creatorID)
+                let fulfilled = AppDataScoping.fulfilledDeletionRequests(pending,
+                                                                         deletedReportNames: Set(privateIDs.map(\.recordName)),
+                                                                         scope: scope)
+
+                try await CloudKitBatch.delete(fulfilled.map(\.id), in: database)
+            }
+            else if creatorID == container.currentUserRecordID,
+                    let ask = AppDataScoping.deletionRequest(scope: scope, scopedReportNames: privateIDs.map(\.recordName)) {
+
+                try await PrivateReportService.saveDeletionRequest(scope: ask.scope,
+                                                                   reportNames: ask.reportNames,
                                                                    requesterID: creatorID,
                                                                    in: database)
                 deletionRequested = true
             }
 
             counts = MyDataCounts(requests: 0,
-                                  votes: await recordIDs(ofType: RecordType.vote, createdBy: creatorID).count,
+                                  votes: await recordIDs(ofType: RecordType.vote, createdBy: creatorID, scope: scope).count,
                                   comments: 0,
                                   reports: 0,
                                   privateReports: deletionRequested ? privateIDs.count : 0,
@@ -152,113 +190,138 @@ public struct MyDataCounts: Sendable, Equatable {
         }
     }
 
+    // MARK: - Queries
+
     /// Queried by CloudKit's own creator reference rather than by our denormalised `creatorID`, so it
     /// also catches record types that have no such field.
-    private func commentRecordIDs(createdBy userRecordName: String) async -> [CKRecord.ID] {
+    private func commentRecordIDs(createdBy userRecordName: String, scope: AppScope) async -> [CKRecord.ID] {
 
         guard container.configuration.allowComments else { return [] }
 
-        return await recordIDs(ofType: RecordType.comment, createdBy: userRecordName)
+        return await recordIDs(ofType: RecordType.comment, createdBy: userRecordName, scope: scope)
     }
 
-    private func recordIDs(ofType recordType: String, createdBy userRecordName: String) async -> [CKRecord.ID] {
-
-        let reference = CKRecord.Reference(recordID: CKRecord.ID(recordName: userRecordName), action: .none)
-        let predicate = NSPredicate(format: "creatorUserRecordID == %@", reference)
-
-        var collected: [CKRecord.ID] = []
-        var cursor: CKQueryOperation.Cursor?
-
-        repeat {
-
-            do {
-
-                let page: (matchResults: [(CKRecord.ID, Result<CKRecord, any Error>)], queryCursor: CKQueryOperation.Cursor?)
-
-                if let cursor {
-
-                    page = try await database.records(continuingMatchFrom: cursor, desiredKeys: [])
-                }
-                else {
-
-                    page = try await database.records(matching: CKQuery(recordType: recordType, predicate: predicate),
-                                                      desiredKeys: [])
-                }
-
-                collected.append(contentsOf: page.matchResults.map { $0.0 })
-
-                cursor = page.queryCursor
-            }
-            catch {
-
-                self.error = CloudKitErrorHandler.classify(error)
-                break
-            }
-        }
-        while cursor != nil
-
-        return collected
-    }
-
-    /// Counts the user's private reports for `MyDataView`. A missing record type counts as none; any
-    /// other failure is surfaced and counts as none, like the other counts.
-    private func privateReportCount(createdBy userRecordName: String) async -> Int {
+    /// For counts: failures surface in `error` and read as none.
+    private func recordIDs(ofType recordType: String, createdBy userRecordName: String, scope: AppScope) async -> [CKRecord.ID] {
 
         do {
 
-            return try await privateReportIDs(createdBy: userRecordName).count
+            return try await scopedRecordIDs(ofType: recordType, createdBy: userRecordName, scope: scope)
         }
         catch {
 
             self.error = CloudKitErrorHandler.classify(error)
 
-            return 0
+            return []
         }
     }
 
-    /// Whether the user has a deletion request waiting for the developer. Failures surface and read
-    /// as `false`; a schema without the record type has none.
-    private func hasPendingPrivateDeletion(createdBy userRecordName: String) async -> Bool {
+    /// Private report count and pending-deletion state for this scope. Failures surface and read as none.
+    private func privateStatus(createdBy userRecordName: String, scope: AppScope) async -> (Int, Bool) {
 
         do {
 
-            let pending = try await deletionRequestIDs(createdBy: userRecordName)
+            let reports = try await scopedRecordIDs(ofType: RecordType.privateReport, createdBy: userRecordName,
+                                                    scope: scope, throwsOnMissingType: false)
+            let pending = try await deletionRequests(createdBy: userRecordName)
+            let requested = AppDataScoping.hasPendingDeletion(pending,
+                                                              requesterID: userRecordName,
+                                                              scopedReportNames: Set(reports.map(\.recordName)),
+                                                              scope: scope)
 
-            return !pending.isEmpty
+            return (reports.count, requested)
         }
         catch {
 
             self.error = CloudKitErrorHandler.classify(error)
 
-            return false
+            return (0, false)
         }
     }
 
-    /// The user's `PrivateReportDeletionRequest` records, all pages.
-    private func deletionRequestIDs(createdBy userRecordName: String) async throws -> [CKRecord.ID] {
+    /// The user's `PrivateReportDeletionRequest` records, all pages. These carry no `appID`; per-app
+    /// handling goes by the report names they list - see `AppDataScoping`.
+    private func deletionRequests(createdBy userRecordName: String) async throws -> [PrivateDeletionRequest] {
 
-        try await throwingRecordIDs(ofType: RecordType.privateReportDeletionRequest, createdBy: userRecordName)
+        let records = try await fetchRecords(ofType: RecordType.privateReportDeletionRequest,
+                                             createdBy: userRecordName,
+                                             desiredKeys: PrivateDeletionRequest.desiredKeys,
+                                             throwsOnMissingType: false)
+
+        return records.compactMap { PrivateDeletionRequest(record: $0, currentUserRecordID: container.currentUserRecordID) }
     }
 
-    /// Every `PrivateReport` the user created, all pages.
+    /// The IDs of `recordType` records the user created that fall in `scope`.
     ///
-    /// Unlike `recordIDs(ofType:createdBy:)` this **throws**, so a failed read stops a deletion instead
-    /// of reporting success with the user's private text and images still stored. The one exception is
-    /// a schema that never had `PrivateReport`: CloudKit answers a query for an unknown record type
-    /// with `.unknownItem`, and that means there is nothing to delete.
-    private func privateReportIDs(createdBy userRecordName: String) async throws -> [CKRecord.ID] {
+    /// Account-wide this is a plain creator query. Per app it also reads each record's `appID` and
+    /// `request`, then the `appID` of every parent request a record has to borrow its app from.
+    private func scopedRecordIDs(ofType recordType: String,
+                                 createdBy userRecordName: String,
+                                 scope: AppScope,
+                                 throwsOnMissingType: Bool = true) async throws -> [CKRecord.ID] {
 
-        try await throwingRecordIDs(ofType: RecordType.privateReport, createdBy: userRecordName)
+        guard AppDataScoping.needsParentLookup(scope) else {
+
+            return try await fetchRecords(ofType: recordType, createdBy: userRecordName, desiredKeys: [],
+                                          throwsOnMissingType: throwsOnMissingType).map(\.recordID)
+        }
+
+        let records = try await fetchRecords(ofType: recordType, createdBy: userRecordName,
+                                             desiredKeys: [FieldKey.appID, FieldKey.request],
+                                             throwsOnMissingType: throwsOnMissingType)
+
+        var byName: [String: CKRecord.ID] = [:]
+
+        let scoped = records.map { record in
+
+            byName[record.recordID.recordName] = record.recordID
+
+            return AppScopedRecord(name: record.recordID.recordName,
+                                   ownAppID: record[FieldKey.appID] as? String,
+                                   parentRequestName: (record[FieldKey.request] as? CKRecord.Reference)?.recordID.recordName)
+        }
+
+        let parentAppIDs = try await requestAppIDs(AppDataScoping.parentNamesToResolve(scoped))
+
+        return AppDataScoping.filter(scoped, parentAppIDs: parentAppIDs, scope: scope).compactMap { byName[$0.name] }
     }
 
-    /// Like `recordIDs(ofType:createdBy:)`, but throws - except for a record type the schema does not
-    /// have, which reads as no records.
-    private func throwingRecordIDs(ofType recordType: String, createdBy userRecordName: String) async throws -> [CKRecord.ID] {
+    /// `appID` of each named request that exists and has one. A request that is gone is left out, so
+    /// its orphaned children read as unscoped.
+    private func requestAppIDs(_ names: Set<String>) async throws -> [String: String] {
+
+        var result: [String: String] = [:]
+
+        for chunk in Array(names).chunked(into: CloudKitBatch.maximumOperationSize) {
+
+            let fetched = try await database.records(for: chunk.map { CKRecord.ID(recordName: $0) }, desiredKeys: [FieldKey.appID])
+
+            for (id, outcome) in fetched {
+
+                guard case .success(let record) = outcome,
+                      let appID = AppScope.normalized(record[FieldKey.appID] as? String) else { continue }
+
+                result[id.recordName] = appID
+            }
+        }
+
+        return result
+    }
+
+    /// Every record of `recordType` the user created, all pages.
+    ///
+    /// Throws, so a failed read stops a deletion instead of reporting success with data still stored.
+    /// With `throwsOnMissingType` off, a schema that never had the type (CloudKit answers `.unknownItem`
+    /// to the first query) reads as no records - used for `PrivateReport` and its deletion requests.
+    private func fetchRecords(ofType recordType: String,
+                              createdBy userRecordName: String,
+                              desiredKeys: [String],
+                              throwsOnMissingType: Bool) async throws -> [CKRecord] {
 
         let reference = CKRecord.Reference(recordID: CKRecord.ID(recordName: userRecordName), action: .none)
         let predicate = NSPredicate(format: "creatorUserRecordID == %@", reference)
 
-        var collected: [CKRecord.ID] = []
+        var collected: [CKRecord] = []
         var cursor: CKQueryOperation.Cursor?
 
         repeat {
@@ -269,21 +332,25 @@ public struct MyDataCounts: Sendable, Equatable {
 
                 if let cursor {
 
-                    page = try await database.records(continuingMatchFrom: cursor, desiredKeys: [])
+                    page = try await database.records(continuingMatchFrom: cursor, desiredKeys: desiredKeys)
                 }
                 else {
 
                     page = try await database.records(matching: CKQuery(recordType: recordType, predicate: predicate),
-                                                      desiredKeys: [])
+                                                      desiredKeys: desiredKeys)
                 }
 
-                collected.append(contentsOf: page.matchResults.map { $0.0 })
+                // A single record that failed to load is skipped, as before; the query itself failing throws.
+                for (_, result) in page.matchResults {
+
+                    if case .success(let record) = result { collected.append(record) }
+                }
 
                 cursor = page.queryCursor
             }
             catch {
 
-                if Self.isMissingRecordType(error, isFirstPage: collected.isEmpty && cursor == nil) { return [] }
+                if !throwsOnMissingType, Self.isMissingRecordType(error, isFirstPage: collected.isEmpty && cursor == nil) { return [] }
 
                 throw error
             }

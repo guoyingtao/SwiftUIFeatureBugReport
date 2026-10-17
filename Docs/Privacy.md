@@ -76,7 +76,8 @@ the developer instead, by creating a `PrivateReportDeletionRequest` (same grants
 
 - **One report:** "Ask the developer to delete this" on the report's detail screen.
 - **All of them:** "Delete my data" in `MyDataView` deletes the public data immediately, as before, and
-  files one request covering every private report. The screen then shows "Deletion requested".
+  files one request covering every private report. With `appID` set it covers this app's private reports
+  only: the request names them (`scope: reports`) instead of asking for `all`. The screen then shows "Deletion requested".
 
 Reports covered by a pending request are marked in "My private reports". The developer sees pending
 requests at the top of the "Private reports" queue and deletes the reports and the request with one
@@ -106,6 +107,37 @@ Votes the user cast on other people's requests remain because they contain no pr
 would rewrite other people's totals. A user can withdraw an individual vote from its request.
 
 Developers can perform the same deletion by creator ID when handling an external deletion request.
+
+### Deletion in a shared container
+
+When several apps share one container and set `appID`, "My data" is **per app**. Counts and "Delete my
+data" cover only records of the current app, by the same rule the board uses: records whose `appID`
+matches, and records with no `appID` only if `includeUnscopedRecords` is `true`. With `appID: nil`
+everything is account-wide, as before. The screen says "this app only" so the user knows.
+
+How each record type is scoped:
+
+| Record type | How its app is decided |
+| --- | --- |
+| `Request`, `PrivateReport` | Its own `appID` |
+| `Comment`, `Report`, `Follow`, `Vote` (counted, never deleted) | The `appID` of the `Request` it references |
+| `Activity`, `RequestMetadata`, `DevComment`, other people's votes and replies | Not queried; deleted by the `.deleteSelf` cascade of the scoped request |
+| `PrivateReportDeletionRequest` | Has no `appID`. A submitter files one naming this app's reports. A developer deleting per app removes only `reports` requests whose named reports were all deleted; `all` requests and ones naming other apps' reports stay in the queue |
+
+A child whose request no longer exists, or whose request has no `appID`, counts as unscoped. Lists are
+read before anything is deleted, so children can still be traced to their request.
+
+**App Store 5.1.1(v).** The guideline asks that users can delete their data from within the app. Per app,
+"Delete my data" in BeeDay deletes the user's BeeDay data; what they posted from another app in the same
+container is deleted from **that** app, which offers the same screen. Say so in each app's privacy policy.
+If an app must delete everything a person ever posted in the container, set `appID: nil` for "My data"
+or have the developer use the portal's "Delete all of this author's data", which is always account-wide.
+Unscoped legacy records are only reachable from apps with `includeUnscopedRecords: true` (or `appID:
+nil`), so turn that on in the app that owned them, or the user cannot delete them from any scoped app.
+This is guidance, not legal advice.
+
+`appID` is client-written, so scoping is a convenience, not a guarantee: a record stamped with the wrong
+app is deleted from that app instead.
 
 ## Manifest
 

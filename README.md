@@ -182,7 +182,11 @@ app shares the same record types and permissions, so a user of one app can read 
 feedback through CloudKit directly. If the apps' feedback must be kept apart, give each app its own
 container. See [CloudKit setup](Docs/CloudKit-Setup.md#one-container-or-several).
 
-"My data" (counts and delete-my-data) stays account-wide across apps, because deletion is too.
+"My data" follows the same rule. With `appID` set, its counts and "Delete my data" cover only this app's
+records (plus unscoped ones if `includeUnscopedRecords` is on); the user's feedback in your other apps stays
+and is deleted from those apps. See [Privacy](Docs/Privacy.md#deletion-in-a-shared-container). With
+`appID: nil` it is account-wide, as before. The portal's "Delete all of this author's data" is always
+account-wide.
 
 ### 6. Deploy before release
 
