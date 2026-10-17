@@ -81,7 +81,14 @@ public struct DeveloperPortalView: View {
         container
             // The version picker lists only the selected app's versions; a version kept from the
             // previous app would silently empty the queue (or hide the picker that could clear it).
-            .onChange(of: appFilter) { _, _ in versionFilter = nil }
+            // Selections are cleared too: the detail panes resolve them from every loaded record,
+            // so a request or private report picked under the previous app would stay open (and
+            // actionable) while the list shows a different app.
+            .onChange(of: appFilter) { _, _ in
+                versionFilter = nil
+                selection = nil
+                privateSelection = nil
+            }
             .task {
 
                 if !store.requests.hasLoadedOnce { await store.start() }
