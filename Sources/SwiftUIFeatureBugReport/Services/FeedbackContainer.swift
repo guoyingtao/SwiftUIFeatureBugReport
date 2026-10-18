@@ -13,6 +13,14 @@ import UIKit
 import AppKit
 #endif
 
+/// The outcome of `FeedbackContainer.prepare()`.
+public enum FeedbackAvailability: Sendable, Equatable {
+
+    case available
+    case unavailable(FeedbackUnavailableReason)
+}
+
+
 /// Where the identity resolution has got to.
 ///
 /// Views must not render row-level state until this reaches `.ready`. Rendering earlier means every
@@ -47,23 +55,53 @@ public enum IdentityState: Sendable, Equatable {
     /// disables voting and submitting rather than failing the whole screen.
     public var canWrite: Bool { identityState == .ready }
 
-    public let container: CKContainer
+    /// The CloudKit container. **Created on first use, never in `init`.**
+    ///
+    /// `CKContainer(identifier:)` traps - an uncatchable crash, not an error - when the app is not
+    /// entitled to the container. Creating it in `init` meant merely *constructing* a board (which
+    /// SwiftUI does for every `NavigationLink(destination:)` on a settings screen) could take the host
+    /// app down. It is now created by `prepare()`, which first checks the signed entitlements. The
+    /// package's views call `prepare()` before rendering anything that touches CloudKit, and show an
+    /// error state instead when it reports `.unavailable`.
+    ///
+    /// Reading this before `prepare()` has succeeded still creates the container directly, which traps
+    /// exactly as before if the entitlement really is missing. Check `prepare()` first.
+    public var container: CKContainer {
+
+        if let containerStorage { return containerStorage }
+
+        prepare()
+
+        if let containerStorage { return containerStorage }
+
+        // Only reachable by host code that ignored an `.unavailable` result from `prepare()`.
+        let created = CKContainer(identifier: configuration.containerIdentifier)
+
+        containerStorage = created
+
+        return created
+    }
 
     public var database: CKDatabase { container.publicCloudDatabase }
 
-    /// `nonisolated(unsafe)` so `deinit` can unregister. Written once in `init` and read once in
-    /// `deinit`, never concurrently.
+    @ObservationIgnored private var containerStorage: CKContainer?
+
+    /// The cached outcome of `prepare()`. Ignored by observation so `prepare()` can run while a view
+    /// body is being evaluated without invalidating it.
+    @ObservationIgnored private var availability: FeedbackAvailability?
+
+    /// `nonisolated(unsafe)` so `deinit` can unregister. Written once in `prepare()` (main actor) and
+    /// read once in `deinit`, never concurrently.
     @ObservationIgnored private nonisolated(unsafe) var accountObserver: (any NSObjectProtocol)?
 
     /// Called after `.CKAccountChanged` so dependent services can drop their derived state.
     var onIdentityChange: (@MainActor () -> Void)?
 
+    /// Cheap and side-effect free: stores the configuration and nothing else. No `CKContainer`, no
+    /// notification observer, no I/O - all of that waits for `prepare()`.
     public init(configuration: FeedbackConfiguration) {
 
         self.configuration = configuration
-        self.container = CKContainer(identifier: configuration.containerIdentifier)
-
-        observeAccountChanges()
     }
 
     deinit {
@@ -71,9 +109,59 @@ public enum IdentityState: Sendable, Equatable {
         if let accountObserver { NotificationCenter.default.removeObserver(accountObserver) }
     }
 
+    // MARK: - Preparation
+
+    /// Whether CloudKit can be used, creating the container and the account observer if it can.
+    ///
+    /// Idempotent and synchronous; the first call reads the app's signed entitlements once per process
+    /// (`CloudKitEntitlementFacts.current`). Only a *definite* problem - an invalid identifier, or
+    /// entitlements that were read and lack CloudKit or this container - returns `.unavailable`. When
+    /// the entitlements cannot be read, the container is created as before.
+    @discardableResult public func prepare() -> FeedbackAvailability {
+
+        if let availability { return availability }
+
+        let identifier = configuration.containerIdentifier
+        let problem = CloudKitEntitlementFacts.identifierProblem(identifier)
+            ?? CloudKitEntitlementFacts.current?.problem(forContainer: identifier)
+
+        let result: FeedbackAvailability
+
+        if let problem {
+
+            result = .unavailable(problem)
+        }
+        else {
+
+            containerStorage = CKContainer(identifier: identifier)
+            observeAccountChanges()
+            result = .available
+        }
+
+        availability = result
+
+        return result
+    }
+
+    /// The reason the feedback screens cannot work, or `nil` once `prepare()` has succeeded.
+    public var unavailableReason: FeedbackUnavailableReason? {
+
+        if case .unavailable(let reason) = prepare() { return reason }
+
+        return nil
+    }
+
     // MARK: - Identity
 
     public func resolveIdentity() async {
+
+        if let unavailableReason {
+
+            currentUserRecordID = nil
+            identityState = .failed(unavailableReason.localizedDescription)
+
+            return
+        }
 
         identityState = .resolving
 
@@ -110,6 +198,8 @@ public enum IdentityState: Sendable, Equatable {
     /// This matters more for a first sign-in, or re-auth after a password change, than for someone
     /// deliberately switching Apple Accounts - but all three land here.
     private func observeAccountChanges() {
+
+        guard accountObserver == nil else { return }
 
         accountObserver = NotificationCenter.default.addObserver(forName: .CKAccountChanged,
                                                                  object: nil,

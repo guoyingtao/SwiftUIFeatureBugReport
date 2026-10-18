@@ -53,6 +53,34 @@ NavigationStack {
 `developerUserRecordIDs` controls who sees the developer portal. CloudKit's `dev` role separately
 authorizes developer writes; configure both if you use the portal.
 
+### Crash safety: nothing runs until a feedback screen is shown
+
+Importing the package and constructing its views does no work. The public views only store their
+arguments - so `NavigationLink(destination: FeedbackBoardView(configuration: ...))` on a settings
+screen is safe - and `FeedbackStore` / `FeedbackContainer` initialisers create no `CKContainer`,
+register no observer and start no task. There are no global or static initialisers with side effects,
+no app-delegate hooks, and no work at launch.
+
+When a feedback screen is first displayed, `FeedbackContainer.prepare()` runs once. It reads the app's
+signed entitlements from its own code signature, and if they definitely lack the iCloud **CloudKit**
+service or the configured container, the screen shows a "Feedback unavailable" state instead of
+creating the container. This matters because `CKContainer(identifier:)` does not throw when the
+entitlement is missing: CloudKit hits a `brk` trap that no `catch` or `@try` can intercept. When the
+entitlements cannot be read (an unusual signing setup), the container is created as before.
+
+Only then does the package touch CloudKit, `UserDefaults` (keys prefixed `com.swiftuifeaturebugreport.`),
+the temporary directory, or notifications. It asks for notification permission at a user's first
+submission or when a developer opens the portal, and re-registers for remote notifications only if the
+app already has permission. If you use `FeedbackStore` or its services directly, call `prepare()` first
+and do not proceed when it returns `.unavailable`.
+
+> **Adding the iCloud capability can change your app's own data stack.** With CloudKit in the
+> entitlements, SwiftData's `ModelConfiguration` defaults to `cloudKitDatabase: .automatic` and starts
+> syncing to the *first* listed container - and traps if your models are not CloudKit-compatible. If
+> the app does not sync, pass `cloudKitDatabase: .none`; if it does, pin its container with
+> `.private("iCloud.your.existing.container")` before adding the feedback container. The same goes for
+> code using `CKContainer.default()` or `NSPersistentCloudKitContainer` without explicit options.
+
 ## CloudKit setup
 
 Budget about 20 minutes. Complete these steps in order.

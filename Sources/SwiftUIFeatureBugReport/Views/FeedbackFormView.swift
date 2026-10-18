@@ -9,7 +9,8 @@ import SwiftUI
 import UIKit
 #endif
 
-public struct FeedbackFormView: View {
+/// The body of `FeedbackFormView`, built only once the gate has a prepared store.
+struct FeedbackFormViewContent: View {
 
     @Environment(\.dismiss) private var dismiss
 
@@ -54,16 +55,7 @@ public struct FeedbackFormView: View {
     private static let searchMinimumLength = 4
     private static let searchDebounce = Duration.milliseconds(450)
 
-    public init(configuration: FeedbackConfiguration,
-                prefill: FeedbackPrefill? = nil,
-                embedsNavigationStack: Bool = true) {
-
-        self.init(store: FeedbackStore(configuration: configuration),
-                  prefill: prefill,
-                  embedsNavigationStack: embedsNavigationStack)
-    }
-
-    public init(store: FeedbackStore,
+    init(store: FeedbackStore,
                 prefill: FeedbackPrefill? = nil,
                 initialType: FeedbackType = .bug,
                 embedsNavigationStack: Bool = true) {
@@ -511,5 +503,44 @@ public struct FeedbackFormView: View {
 
             isSubmitting = false
         }
+    }
+}
+
+
+/// A public entry point. Its initialisers only store their arguments, so constructing it - which
+/// SwiftUI does eagerly for `NavigationLink(destination:)` - does no work at all.
+public struct FeedbackFormView: View {
+
+    private let source: FeedbackStoreSource
+    private let prefill: FeedbackPrefill?
+    private let initialType: FeedbackType
+    private let embedsNavigationStack: Bool
+
+    /// Stores its arguments and nothing else. The store, and with it the `CKContainer`, is created
+    /// only when this view is displayed - see `FeedbackStoreGate`.
+    public init(configuration: FeedbackConfiguration,
+                prefill: FeedbackPrefill? = nil,
+                embedsNavigationStack: Bool = true) {
+
+        self.source = .configuration(configuration)
+        self.prefill = prefill
+        self.initialType = .bug
+        self.embedsNavigationStack = embedsNavigationStack
+    }
+
+    public init(store: FeedbackStore,
+                prefill: FeedbackPrefill? = nil,
+                initialType: FeedbackType = .bug,
+                embedsNavigationStack: Bool = true) {
+
+        self.source = .store(store)
+        self.prefill = prefill
+        self.initialType = initialType
+        self.embedsNavigationStack = embedsNavigationStack
+    }
+
+    public var body: some View {
+
+        FeedbackStoreGate(source: source) { store in FeedbackFormViewContent(store: store, prefill: prefill, initialType: initialType, embedsNavigationStack: embedsNavigationStack) }
     }
 }

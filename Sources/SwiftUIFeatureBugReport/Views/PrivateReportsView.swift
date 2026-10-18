@@ -24,7 +24,8 @@ public enum PrivateReportScope: String, Sendable, Hashable {
 ///
 /// Rows push a detail view, so on the Mac this always owns a `NavigationStack` of its own - the pushes
 /// stay inside this view instead of replacing the host's content (see `BoardDestination`).
-public struct PrivateReportsView: View {
+/// The body of `PrivateReportsView`, built only once the gate has a prepared store.
+struct PrivateReportsViewContent: View {
 
     @State private var store: FeedbackStore
     @State private var appFilter: AppFilter = .all
@@ -32,16 +33,7 @@ public struct PrivateReportsView: View {
     private let scope: PrivateReportScope
     private let embedsNavigationStack: Bool
 
-    public init(configuration: FeedbackConfiguration,
-                scope: PrivateReportScope = .mine,
-                embedsNavigationStack: Bool = true) {
-
-        self.init(store: FeedbackStore(configuration: configuration),
-                  scope: scope,
-                  embedsNavigationStack: embedsNavigationStack)
-    }
-
-    public init(store: FeedbackStore, scope: PrivateReportScope = .mine, embedsNavigationStack: Bool = true) {
+    init(store: FeedbackStore, scope: PrivateReportScope = .mine, embedsNavigationStack: Bool = true) {
 
         self.store = store
         self.scope = scope
@@ -1091,5 +1083,38 @@ struct PrivateMessageRow: View {
             if !isOwn { Spacer(minLength: 40) }
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+
+/// A public entry point. Its initialisers only store their arguments, so constructing it - which
+/// SwiftUI does eagerly for `NavigationLink(destination:)` - does no work at all.
+public struct PrivateReportsView: View {
+
+    private let source: FeedbackStoreSource
+    private let scope: PrivateReportScope
+    private let embedsNavigationStack: Bool
+
+    /// Stores its arguments and nothing else. The store, and with it the `CKContainer`, is created
+    /// only when this view is displayed - see `FeedbackStoreGate`.
+    public init(configuration: FeedbackConfiguration,
+                scope: PrivateReportScope = .mine,
+                embedsNavigationStack: Bool = true) {
+
+        self.source = .configuration(configuration)
+        self.scope = scope
+        self.embedsNavigationStack = embedsNavigationStack
+    }
+
+    public init(store: FeedbackStore, scope: PrivateReportScope = .mine, embedsNavigationStack: Bool = true) {
+
+        self.source = .store(store)
+        self.scope = scope
+        self.embedsNavigationStack = embedsNavigationStack
+    }
+
+    public var body: some View {
+
+        FeedbackStoreGate(source: source) { store in PrivateReportsViewContent(store: store, scope: scope, embedsNavigationStack: embedsNavigationStack) }
     }
 }

@@ -47,7 +47,8 @@ enum PortalQueue: String, CaseIterable, Hashable {
 ///
 /// Shipping this view in every build is not a security hole: `FeedbackContainer.isDeveloper` decides
 /// whether it is *offered*, and the `dev` security role decides whether its writes are *accepted*.
-public struct DeveloperPortalView: View {
+/// The body of `DeveloperPortalView`, built only once the gate has a prepared store.
+struct DeveloperPortalViewContent: View {
 
     @State private var store: FeedbackStore
 
@@ -68,12 +69,7 @@ public struct DeveloperPortalView: View {
 
     private let embedsNavigationStack: Bool
 
-    public init(configuration: FeedbackConfiguration, embedsNavigationStack: Bool = true) {
-
-        self.init(store: FeedbackStore(configuration: configuration), embedsNavigationStack: embedsNavigationStack)
-    }
-
-    public init(store: FeedbackStore, embedsNavigationStack: Bool = true) {
+    init(store: FeedbackStore, embedsNavigationStack: Bool = true) {
 
         self.store = store
         self.embedsNavigationStack = embedsNavigationStack
@@ -626,5 +622,33 @@ public struct DeveloperPortalView: View {
     private var availableVersions: [String] {
 
         PortalRequestFilter.availableVersions(in: store.requests.requests, appFilter: appFilter)
+    }
+}
+
+
+/// A public entry point. Its initialisers only store their arguments, so constructing it - which
+/// SwiftUI does eagerly for `NavigationLink(destination:)` - does no work at all.
+public struct DeveloperPortalView: View {
+
+    private let source: FeedbackStoreSource
+    private let embedsNavigationStack: Bool
+
+    /// Stores its arguments and nothing else. The store, and with it the `CKContainer`, is created
+    /// only when this view is displayed - see `FeedbackStoreGate`.
+    public init(configuration: FeedbackConfiguration, embedsNavigationStack: Bool = true) {
+
+        self.source = .configuration(configuration)
+        self.embedsNavigationStack = embedsNavigationStack
+    }
+
+    public init(store: FeedbackStore, embedsNavigationStack: Bool = true) {
+
+        self.source = .store(store)
+        self.embedsNavigationStack = embedsNavigationStack
+    }
+
+    public var body: some View {
+
+        FeedbackStoreGate(source: source) { store in DeveloperPortalViewContent(store: store, embedsNavigationStack: embedsNavigationStack) }
     }
 }

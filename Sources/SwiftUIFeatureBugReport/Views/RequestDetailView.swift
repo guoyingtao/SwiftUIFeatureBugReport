@@ -6,7 +6,8 @@
 import CloudKit
 import SwiftUI
 
-public struct RequestDetailView: View {
+/// The body of `RequestDetailView`, built only once the gate has a prepared store.
+struct RequestDetailViewContent: View {
 
     @Environment(\.dismiss) private var dismiss
 
@@ -28,7 +29,7 @@ public struct RequestDetailView: View {
 
     private let embedsNavigationStack: Bool
 
-    public init(store: FeedbackStore, request: FeedbackRequest, embedsNavigationStack: Bool = true) {
+    init(store: FeedbackStore, request: FeedbackRequest, embedsNavigationStack: Bool = true) {
 
         self.store = store
         self.request = request
@@ -539,5 +540,27 @@ struct EditRequestView: View {
 
             isSaving = false
         }
+    }
+}
+
+
+/// A public entry point. Its initialisers only store their arguments, so constructing it - which
+/// SwiftUI does eagerly for `NavigationLink(destination:)` - does no work at all.
+public struct RequestDetailView: View {
+
+    private let source: FeedbackStoreSource
+    private let request: FeedbackRequest
+    private let embedsNavigationStack: Bool
+
+    public init(store: FeedbackStore, request: FeedbackRequest, embedsNavigationStack: Bool = true) {
+
+        self.source = .store(store)
+        self.request = request
+        self.embedsNavigationStack = embedsNavigationStack
+    }
+
+    public var body: some View {
+
+        FeedbackStoreGate(source: source) { store in RequestDetailViewContent(store: store, request: request, embedsNavigationStack: embedsNavigationStack) }
     }
 }

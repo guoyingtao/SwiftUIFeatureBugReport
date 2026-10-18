@@ -7,19 +7,15 @@ import SwiftUI
 
 /// Reached from the board's overflow menu (§9.4). Not on the main screen, not buried three levels
 /// down - somewhere a user looking for it will actually find it.
-public struct MyDataView: View {
+/// The body of `MyDataView`, built only once the gate has a prepared store.
+struct MyDataViewContent: View {
 
     @State private var store: FeedbackStore
     @State private var showingDeleteConfirmation = false
 
     private let embedsNavigationStack: Bool
 
-    public init(configuration: FeedbackConfiguration, embedsNavigationStack: Bool = true) {
-
-        self.init(store: FeedbackStore(configuration: configuration), embedsNavigationStack: embedsNavigationStack)
-    }
-
-    public init(store: FeedbackStore, embedsNavigationStack: Bool = true) {
+    init(store: FeedbackStore, embedsNavigationStack: Bool = true) {
 
         self.store = store
         self.embedsNavigationStack = embedsNavigationStack
@@ -204,5 +200,33 @@ public struct MyDataView: View {
 
         } header: { Text("Blocked authors") }
           footer: { Text("Kept on this device only.") }
+    }
+}
+
+
+/// A public entry point. Its initialisers only store their arguments, so constructing it - which
+/// SwiftUI does eagerly for `NavigationLink(destination:)` - does no work at all.
+public struct MyDataView: View {
+
+    private let source: FeedbackStoreSource
+    private let embedsNavigationStack: Bool
+
+    /// Stores its arguments and nothing else. The store, and with it the `CKContainer`, is created
+    /// only when this view is displayed - see `FeedbackStoreGate`.
+    public init(configuration: FeedbackConfiguration, embedsNavigationStack: Bool = true) {
+
+        self.source = .configuration(configuration)
+        self.embedsNavigationStack = embedsNavigationStack
+    }
+
+    public init(store: FeedbackStore, embedsNavigationStack: Bool = true) {
+
+        self.source = .store(store)
+        self.embedsNavigationStack = embedsNavigationStack
+    }
+
+    public var body: some View {
+
+        FeedbackStoreGate(source: source) { store in MyDataViewContent(store: store, embedsNavigationStack: embedsNavigationStack) }
     }
 }

@@ -6,7 +6,8 @@
 import SwiftUI
 
 /// The board grouped by status rather than sorted by votes - planned, in progress, done.
-public struct RoadmapView: View {
+/// The body of `RoadmapView`, built only once the gate has a prepared store.
+struct RoadmapViewContent: View {
 
     @State private var store: FeedbackStore
 
@@ -17,12 +18,7 @@ public struct RoadmapView: View {
 
     private let embedsNavigationStack: Bool
 
-    public init(configuration: FeedbackConfiguration, embedsNavigationStack: Bool = true) {
-
-        self.init(store: FeedbackStore(configuration: configuration), embedsNavigationStack: embedsNavigationStack)
-    }
-
-    public init(store: FeedbackStore, embedsNavigationStack: Bool = true) {
+    init(store: FeedbackStore, embedsNavigationStack: Bool = true) {
 
         self.store = store
         self.embedsNavigationStack = embedsNavigationStack
@@ -187,5 +183,33 @@ public struct RoadmapView: View {
                 (version, (buckets[version] ?? [])
                     .sorted { store.votes.tally(for: $0.id) > store.votes.tally(for: $1.id) })
             }
+    }
+}
+
+
+/// A public entry point. Its initialisers only store their arguments, so constructing it - which
+/// SwiftUI does eagerly for `NavigationLink(destination:)` - does no work at all.
+public struct RoadmapView: View {
+
+    private let source: FeedbackStoreSource
+    private let embedsNavigationStack: Bool
+
+    /// Stores its arguments and nothing else. The store, and with it the `CKContainer`, is created
+    /// only when this view is displayed - see `FeedbackStoreGate`.
+    public init(configuration: FeedbackConfiguration, embedsNavigationStack: Bool = true) {
+
+        self.source = .configuration(configuration)
+        self.embedsNavigationStack = embedsNavigationStack
+    }
+
+    public init(store: FeedbackStore, embedsNavigationStack: Bool = true) {
+
+        self.source = .store(store)
+        self.embedsNavigationStack = embedsNavigationStack
+    }
+
+    public var body: some View {
+
+        FeedbackStoreGate(source: source) { store in RoadmapViewContent(store: store, embedsNavigationStack: embedsNavigationStack) }
     }
 }

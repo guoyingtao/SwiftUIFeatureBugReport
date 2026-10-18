@@ -41,13 +41,15 @@ private enum BoardDestination: Hashable, Identifiable {
 
 
 /// The main board: browse, filter, sort, search, vote inline, and open the form.
-public struct FeedbackBoardView: View {
+/// The body of `FeedbackBoardView`, built only once the gate has a prepared store.
+struct FeedbackBoardViewContent: View {
 
     @State private var store: FeedbackStore
     @State private var retryGate = RetryGate()
 
     @State private var filter: BoardFilter = .all
-    @AppStorage("feedbackBoardSort") private var sort: BoardSort = .votes
+    /// Prefixed like the package's other keys, so it cannot collide with one of the host app's own.
+    @AppStorage("com.swiftuifeaturebugreport.boardSort") private var sort: BoardSort = .votes
 
     @State private var searchText = ""
     @State private var showingForm = false
@@ -72,16 +74,9 @@ public struct FeedbackBoardView: View {
     /// a sheet, or a split view's detail column. Turn it off when pushing this onto a stack the host
     /// already owns: a stack nested inside another stack's destination makes SwiftUI compare the two
     /// paths against each other, and it traps when their element types differ.
-    public init(configuration: FeedbackConfiguration,
-                prefill: FeedbackPrefill? = nil) {
-
-        self.store = FeedbackStore(configuration: configuration)
-        self.prefill = prefill
-    }
-
     /// Shares one store with the rest of the host app - use this when the board is one tab of several
     /// and you do not want each tab reloading the same tallies.
-    public init(store: FeedbackStore,
+    init(store: FeedbackStore,
                 prefill: FeedbackPrefill? = nil) {
 
         self.store = store
@@ -873,5 +868,35 @@ public struct FeedbackBoardView: View {
 
             votingIn.remove(request.id)
         }
+    }
+}
+
+
+/// A public entry point. Its initialisers only store their arguments, so constructing it - which
+/// SwiftUI does eagerly for `NavigationLink(destination:)` - does no work at all.
+public struct FeedbackBoardView: View {
+
+    private let source: FeedbackStoreSource
+    private let prefill: FeedbackPrefill?
+
+    /// Stores its arguments and nothing else. The store, and with it the `CKContainer`, is created
+    /// only when this view is displayed - see `FeedbackStoreGate`.
+    public init(configuration: FeedbackConfiguration,
+                prefill: FeedbackPrefill? = nil) {
+
+        self.source = .configuration(configuration)
+        self.prefill = prefill
+    }
+
+    public init(store: FeedbackStore,
+                prefill: FeedbackPrefill? = nil) {
+
+        self.source = .store(store)
+        self.prefill = prefill
+    }
+
+    public var body: some View {
+
+        FeedbackStoreGate(source: source) { store in FeedbackBoardViewContent(store: store, prefill: prefill) }
     }
 }

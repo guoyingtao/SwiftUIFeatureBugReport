@@ -32,6 +32,9 @@ import Observation
     /// store-based views often appear together; both paths must converge on one startup operation.
     @ObservationIgnored private var startupTask: Task<Void, Never>?
 
+    /// Both initialisers are cheap and side-effect free: nothing touches CloudKit, registers an
+    /// observer or starts a task. That all waits for `prepare()` / `start()`, which the package's
+    /// views only call once they are on screen.
     public convenience init(configuration: FeedbackConfiguration) {
 
         self.init(container: FeedbackContainer(configuration: configuration))
@@ -92,7 +95,19 @@ import Observation
 
     // MARK: - Loading
 
+    /// See `FeedbackContainer.prepare()`. Forwarded so hosts holding only a store can check before
+    /// presenting anything themselves.
+    @discardableResult public func prepare() -> FeedbackAvailability { container.prepare() }
+
     public func start() async {
+
+        // An app not entitled to the container must never reach `CKContainer(identifier:)`, which
+        // traps. `resolveIdentity` turns this into a `.failed` identity the views can show.
+        guard container.unavailableReason == nil else {
+
+            await container.resolveIdentity()
+            return
+        }
 
         if let startupTask {
 
@@ -168,6 +183,8 @@ import Observation
     }
 
     public func load() async {
+
+        guard container.unavailableReason == nil else { return }
 
         // Private-only: the main list is the user's own private reports; nothing public is queried.
         guard hasPublicBoard else {
