@@ -129,9 +129,8 @@ import Observation
 
         // By CloudKit's own creator reference: the `creatorID` field is written by the client and proves
         // nothing.
-        let reference = CKRecord.Reference(recordID: CKRecord.ID(recordName: me), action: .none)
         let scope = container.configuration.appScope
-        let predicate = scope.predicate(NSPredicate(format: "creatorUserRecordID == %@", reference))
+        let predicate = Self.myReportsPredicate(creator: me, scope: scope)
         let started = generation
 
         // Replaces the list - nothing from an earlier load survives except reports this device has just
@@ -146,6 +145,15 @@ import Observation
         }
 
         await loadMyDeletionRequests()
+    }
+
+    /// The signed-in user's own reports, by CloudKit's creator reference, narrowed to this app where
+    /// CloudKit can express it.
+    nonisolated static func myReportsPredicate(creator userRecordName: String, scope: AppScope) -> NSPredicate {
+
+        let reference = CKRecord.Reference(recordID: CKRecord.ID(recordName: userRecordName), action: .none)
+
+        return scope.predicate(NSPredicate(format: "creatorUserRecordID == %@", reference))
     }
 
     /// Loads the signed-in user's own pending deletion requests. A schema without the record type has
