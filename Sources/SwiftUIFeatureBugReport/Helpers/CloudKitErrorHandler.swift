@@ -95,12 +95,25 @@ enum CloudKitErrorHandler {
 
         guard let ckError = error as? CKError else { return nil }
 
-        if let seconds = ckError.userInfo[CKErrorRetryAfterKey] as? Double { return seconds }
+        if let seconds = ckError.userInfo[CKErrorRetryAfterKey] as? Double { return sanitizedDelay(seconds) }
 
         // A partial failure carries the retry hint on the individual item error, not the wrapper.
         return partialErrors(in: ckError).values
             .compactMap { ($0 as? CKError)?.userInfo[CKErrorRetryAfterKey] as? Double }
+            .compactMap(sanitizedDelay)
             .max()
+    }
+
+    /// The longest wait honoured. Anything longer is treated as this.
+    static let maximumRetryDelay: TimeInterval = 3600
+
+    /// A server-supplied delay made safe to use. `Duration.seconds(_:)` and `Int(_:)` both trap on a
+    /// non-finite value, and the hint arrives as an untyped `userInfo` number.
+    static func sanitizedDelay(_ seconds: Double) -> TimeInterval? {
+
+        guard seconds.isFinite, seconds >= 0 else { return nil }
+
+        return min(seconds, maximumRetryDelay)
     }
 
     static func partialErrors(in error: Error) -> [CKRecord.ID: Error] {

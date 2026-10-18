@@ -62,7 +62,8 @@ struct ImageAttachmentPicker: View {
                                 .frame(width: 96, height: 96)
                                 .clipShape(.rect(cornerRadius: 8))
 
-                            Button(action: { imageData.remove(at: index) },
+                            // Bounds-checked: a second tap can land before the row disappears.
+                            Button(action: { if imageData.indices.contains(index) { imageData.remove(at: index) } },
                                    label: { Image(systemName: "xmark.circle.fill").symbolRenderingMode(.hierarchical) })
                                 .buttonStyle(.borderless)
                                 .padding(4)
@@ -141,15 +142,11 @@ struct ImageAttachmentPicker: View {
         #endif
     }
 
+    /// A downsampled thumbnail. Decoding the picked photo itself for a 96 pt tile cost the full
+    /// bitmap - around 48 MB for a 12 MP photo, three times over.
     private func previewImage(from data: Data) -> Image? {
 
-        #if canImport(UIKit)
-        UIImage(data: data).map { Image(uiImage: $0) }
-        #elseif canImport(AppKit)
-        NSImage(data: data).map { Image(nsImage: $0) }
-        #else
-        nil
-        #endif
+        FeedbackImage.thumbnail(from: data, maxPixelSize: 300)
     }
 }
 
@@ -166,7 +163,7 @@ struct ImageGallery: View {
 
     var body: some View {
 
-        if urls.count == 1, let image = FeedbackImage.image(at: urls[0]) {
+        if urls.count == 1, let image = FeedbackImage.image(at: urls[0], maxPixelSize: FeedbackImage.maximumDimension) {
 
             // Capped, like the multi-image branch. A `resizable` image with no ceiling reports an
             // ideal height of the full asset, which on the Mac grew the enclosing `Form` past the
@@ -188,7 +185,7 @@ struct ImageGallery: View {
 
                     ForEach(Array(urls.enumerated()), id: \.offset) { index, url in
 
-                        if let image = FeedbackImage.image(at: url) {
+                        if let image = FeedbackImage.image(at: url, maxPixelSize: FeedbackImage.maximumDimension) {
 
                             deletable(image
                                 .resizable()

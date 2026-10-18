@@ -54,7 +54,9 @@ public enum FeedbackError: LocalizedError, Sendable {
             return String(localized: "CloudKit developer role not configured. See README setup step 4.")
 
         case .rateLimited(let retryAfter):
-            return String(localized: "Too many requests. Try again in \(Int(retryAfter.rounded(.up))) seconds.")
+            let seconds = Int((CloudKitErrorHandler.sanitizedDelay(retryAfter) ?? 30).rounded(.up))
+
+            return String(localized: "Too many requests. Try again in \(seconds) seconds.")
 
         case .networkUnavailable:
             return String(localized: "No network connection.")

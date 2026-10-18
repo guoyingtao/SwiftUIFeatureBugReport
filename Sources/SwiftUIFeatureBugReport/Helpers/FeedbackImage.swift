@@ -98,21 +98,42 @@ enum FeedbackImage {
     static func copyOut(_ assets: [CKAsset]) -> [URL] { assets.compactMap { copyOut($0) } }
 
     /// Bridges a file URL onto a SwiftUI `Image` without either platform's picker types leaking into
-    /// call sites.
-    @MainActor static func image(at url: URL) -> Image? {
+    /// call sites. Decoded through ImageIO at no more than `maxPixelSize` on the long edge, so an
+    /// oversized attachment - written by an older build or another client - cannot balloon memory.
+    @MainActor static func image(at url: URL, maxPixelSize: Int) -> Image? {
 
-        guard let data = try? Data(contentsOf: url) else { return nil }
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
 
-        #if canImport(UIKit)
-        guard let platformImage = UIImage(data: data) else { return nil }
+        return image(from: source, maxPixelSize: maxPixelSize)
+    }
 
-        return Image(uiImage: platformImage)
-        #elseif canImport(AppKit)
-        guard let platformImage = NSImage(data: data) else { return nil }
+    @MainActor static func thumbnail(from data: Data, maxPixelSize: Int) -> Image? {
 
-        return Image(nsImage: platformImage)
-        #else
-        return nil
-        #endif
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+
+        return image(from: source, maxPixelSize: maxPixelSize)
+    }
+
+    @MainActor private static func image(from source: CGImageSource, maxPixelSize: Int) -> Image? {
+
+        guard let cgImage = downsampled(source, maxPixelSize: maxPixelSize) else { return nil }
+
+        // Not `decorative`: call sites attach their own accessibility labels.
+        return Image(cgImage, scale: 1, label: Text("Image"))
+    }
+
+    /// The decode itself, separate so it is unit tested.
+    static func downsampled(_ source: CGImageSource, maxPixelSize: Int) -> CGImage? {
+
+        guard CGImageSourceGetCount(source) > 0 else { return nil }
+
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(1, maxPixelSize)
+        ]
+
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
 }
