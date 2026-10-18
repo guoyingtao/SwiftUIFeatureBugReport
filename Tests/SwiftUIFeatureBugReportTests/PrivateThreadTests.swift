@@ -246,3 +246,37 @@ struct PrivateThreadPendingTests {
                                              followUps: [followUp("u", at: 20)], developerUserRecordIDs: developers) == false)
     }
 }
+
+
+/// The attribution rule on its own: it decides what a submitter or developer is shown, so every
+/// branch is pinned rather than only reached through `messages`.
+@Suite("Private follow-up attribution")
+struct PrivateFollowUpAuthorTests {
+
+    @Test("The report's creator is the submitter; a configured developer is the developer")
+    func knownAuthors() {
+
+        #expect(PrivateThread.author(of: followUp("u", by: "_alice", at: 1), on: report(), developerUserRecordIDs: developers) == .submitter)
+        #expect(PrivateThread.author(of: followUp("d", by: "_dev", at: 1), on: report(), developerUserRecordIDs: developers) == .developer)
+    }
+
+    @Test("Anyone else, an empty creator, or another report's follow-up is not shown")
+    func rejected() {
+
+        #expect(PrivateThread.author(of: followUp("m", by: "_mallory", at: 1), on: report(), developerUserRecordIDs: developers) == nil)
+        #expect(PrivateThread.author(of: followUp("e", by: "", at: 1), on: report(creator: ""), developerUserRecordIDs: developers) == nil)
+        #expect(PrivateThread.author(of: followUp("o", on: "pr2", by: "_alice", at: 1), on: report(), developerUserRecordIDs: developers) == nil)
+    }
+
+    @Test("A developer who also filed the report is attributed as its submitter")
+    func developerAsSubmitter() {
+
+        #expect(PrivateThread.author(of: followUp("x", by: "_dev", at: 1), on: report(creator: "_dev"), developerUserRecordIDs: developers) == .submitter)
+    }
+
+    @Test("With no developers configured, a non-creator is never attributed")
+    func noDevelopers() {
+
+        #expect(PrivateThread.author(of: followUp("d", by: "_dev", at: 1), on: report(), developerUserRecordIDs: []) == nil)
+    }
+}
