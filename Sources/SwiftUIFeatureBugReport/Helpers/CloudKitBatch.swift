@@ -28,23 +28,7 @@ enum CloudKitBatch {
                                                            savePolicy: .changedKeys,
                                                            atomically: false)
 
-            // With `atomically: false` the call succeeds overall even when individual records fail, and
-            // the failures are only in these results. Ignoring them made a failed delete look done.
-            let saveErrors = results.saveResults.values.compactMap { result -> (any Error)? in
-
-                if case .failure(let error) = result { return error }
-
-                return nil
-            }
-
-            let deleteErrors = results.deleteResults.values.compactMap { result -> (any Error)? in
-
-                if case .failure(let error) = result { return error }
-
-                return nil
-            }
-
-            if let failure = firstUnexpectedFailure(saveErrors: saveErrors, deleteErrors: deleteErrors) { throw failure }
+            try throwFirstUnexpectedFailure(saveResults: results.saveResults, deleteResults: results.deleteResults)
         }
     }
 
@@ -91,6 +75,30 @@ enum CloudKitBatch {
         if let failure = deleteErrors.first(where: { !CloudKitErrorHandler.isRecordMissing($0) }) { return failure }
 
         return saveErrors.first { !CloudKitErrorHandler.isDuplicateRecord($0) }
+    }
+
+    /// Throws the first unexpected per-record failure in a `modifyRecords(atomically: false)` result.
+    ///
+    /// With `atomically: false` the call succeeds overall even when individual records fail, and the
+    /// failures are only in these results. Ignoring them made a failed delete look done.
+    static func throwFirstUnexpectedFailure(saveResults: [CKRecord.ID: Result<CKRecord, any Error>],
+                                            deleteResults: [CKRecord.ID: Result<Void, any Error>]) throws {
+
+        let saveErrors = saveResults.values.compactMap { result -> (any Error)? in
+
+            if case .failure(let error) = result { return error }
+
+            return nil
+        }
+
+        let deleteErrors = deleteResults.values.compactMap { result -> (any Error)? in
+
+            if case .failure(let error) = result { return error }
+
+            return nil
+        }
+
+        if let failure = firstUnexpectedFailure(saveErrors: saveErrors, deleteErrors: deleteErrors) { throw failure }
     }
 
     private static func perform(saving records: [CKRecord],

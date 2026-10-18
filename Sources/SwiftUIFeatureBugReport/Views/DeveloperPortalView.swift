@@ -597,42 +597,18 @@ public struct DeveloperPortalView: View {
     /// users, not for the person who has to moderate.
     private var queued: [FeedbackRequest] {
 
-        store.requests.requests
-            .filter { request in
+        let filter = PortalRequestFilter(appFilter: appFilter,
+                                         versionFilter: versionFilter,
+                                         searchText: searchText,
+                                         queue: queue)
 
-                // Every app in a shared container, so a developer can triage them all from one build.
-                guard appFilter.matches(request.appID) else { return false }
-
-                guard versionFilter == nil || request.environment.appVersion == versionFilter else { return false }
-
-                // Client-side over the already-loaded board - no extra query, and it can match the
-                // author ID, which is what you have when a deletion request arrives by email.
-                let needle = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-
-                if !needle.isEmpty {
-
-                    let haystack = [request.title, request.body, request.creatorID].joined(separator: " ").lowercased()
-
-                    guard haystack.contains(needle) else { return false }
-                }
-
-                switch queue {
-
-                // Named for exactly what it filters on, so the tab and the behaviour cannot drift apart.
-                case .open: return request.status == .open && request.moderation != .hidden
-                case .reported: return store.reports.reportCount(for: request.id) > 0
-                case .images: return request.imageState == .pending
-                case .all: return true
-                }
-            }
+        return store.requests.requests
+            .filter { request in filter.includes(request, reportCount: { store.reports.reportCount(for: $0) }) }
             .sorted { store.votes.tally(for: $0.id) > store.votes.tally(for: $1.id) }
     }
 
     private var availableVersions: [String] {
 
-        // Versions of the selected app only: BeeDay 2.1 and BeeTunes 2.1 are unrelated builds.
-        Array(Set(store.requests.requests.filter { appFilter.matches($0.appID) }.map(\.environment.appVersion)))
-            .filter { !$0.isEmpty }
-            .sorted(by: >)
+        PortalRequestFilter.availableVersions(in: store.requests.requests, appFilter: appFilter)
     }
 }

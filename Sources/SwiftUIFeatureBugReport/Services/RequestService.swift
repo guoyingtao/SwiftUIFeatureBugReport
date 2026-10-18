@@ -61,9 +61,7 @@ import Observation
         //
         // Developers also read every app in a shared container, because the portal filters by app. The
         // board itself narrows to this app on the client - see `FeedbackStore.boardRequests`.
-        let predicate = container.isDeveloper
-            ? NSPredicate(value: true)
-            : scope.predicate(NSPredicate(format: "%K != %@", FieldKey.moderation, ModerationState.hidden.rawValue))
+        let predicate = Self.boardPredicate(isDeveloper: container.isDeveloper, scope: scope)
 
         let query = CKQuery(recordType: RecordType.request, predicate: predicate)
         query.sortDescriptors = [NSSortDescriptor(key: FieldKey.lastActivityAt, ascending: false)]
@@ -150,6 +148,20 @@ import Observation
         }
     }
 
+    /// The board query's predicate - see `loadBoard()` for why developers read everything.
+    nonisolated static func boardPredicate(isDeveloper: Bool, scope: AppScope) -> NSPredicate {
+
+        isDeveloper
+            ? NSPredicate(value: true)
+            : scope.predicate(NSPredicate(format: "%K != %@", FieldKey.moderation, ModerationState.hidden.rawValue))
+    }
+
+    /// The search query's predicate - see `search(_:)`.
+    nonisolated static func searchPredicate(for trimmedText: String, scope: AppScope) -> NSPredicate {
+
+        scope.predicate(NSPredicate(format: "self CONTAINS %@", trimmedText))
+    }
+
     // MARK: - Search
 
     /// Search-before-submit (§9.1). Includes completed requests deliberately - "fixed in 2.1" is the
@@ -169,7 +181,7 @@ import Observation
         // Do not mark `body` searchable without revisiting this: CloudKit returns matches in no
         // particular order and has no relevance scoring, so widening the match set does not surface
         // better results, it just makes which five you get arbitrary.
-        let predicate = scope.predicate(NSPredicate(format: "self CONTAINS %@", trimmed))
+        let predicate = Self.searchPredicate(for: trimmed, scope: scope)
 
         let query = CKQuery(recordType: RecordType.request, predicate: predicate)
 
