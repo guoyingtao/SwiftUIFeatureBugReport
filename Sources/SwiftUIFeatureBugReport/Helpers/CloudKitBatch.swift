@@ -21,14 +21,50 @@ enum CloudKitBatch {
                        deleting recordIDs: [CKRecord.ID],
                        in database: CKDatabase) async throws {
 
+        try await modify(saving: records, deleting: recordIDs) { saving, deleting in
+
+            let results = try await database.modifyRecords(saving: saving,
+                                                           deleting: deleting,
+                                                           savePolicy: .changedKeys,
+                                                           atomically: false)
+
+            // With `atomically: false` the call succeeds overall even when individual records fail, and
+            // the failures are only in these results. Ignoring them made a failed delete look done.
+            let saveErrors = results.saveResults.values.compactMap { result -> (any Error)? in
+
+                if case .failure(let error) = result { return error }
+
+                return nil
+            }
+
+            let deleteErrors = results.deleteResults.values.compactMap { result -> (any Error)? in
+
+                if case .failure(let error) = result { return error }
+
+                return nil
+            }
+
+            if let failure = firstUnexpectedFailure(saveErrors: saveErrors, deleteErrors: deleteErrors) { throw failure }
+        }
+    }
+
+    /// One `modifyRecords` call. Injected so the chunking and splitting can be tested without CloudKit.
+    typealias Write = (_ saving: [CKRecord], _ deleting: [CKRecord.ID]) async throws -> Void
+
+    /// Chunks into `maximumOperationSize` batches - saves first, then deletes - and halves any batch
+    /// `write` rejects as too large.
+    static func modify(saving records: [CKRecord],
+                       deleting recordIDs: [CKRecord.ID],
+                       using write: Write) async throws {
+
         for chunk in records.chunked(into: maximumOperationSize) {
 
-            try await perform(saving: chunk, deleting: [], in: database)
+            try await perform(saving: chunk, deleting: [], using: write)
         }
 
         for chunk in recordIDs.chunked(into: maximumOperationSize) {
 
-            try await perform(saving: [], deleting: chunk, in: database)
+            try await perform(saving: [], deleting: chunk, using: write)
         }
     }
 
@@ -59,34 +95,13 @@ enum CloudKitBatch {
 
     private static func perform(saving records: [CKRecord],
                                 deleting recordIDs: [CKRecord.ID],
-                                in database: CKDatabase) async throws {
+                                using write: Write) async throws {
 
         guard !records.isEmpty || !recordIDs.isEmpty else { return }
 
         do {
 
-            let results = try await database.modifyRecords(saving: records,
-                                                           deleting: recordIDs,
-                                                           savePolicy: .changedKeys,
-                                                           atomically: false)
-
-            // With `atomically: false` the call succeeds overall even when individual records fail, and
-            // the failures are only in these results. Ignoring them made a failed delete look done.
-            let saveErrors = results.saveResults.values.compactMap { result -> (any Error)? in
-
-                if case .failure(let error) = result { return error }
-
-                return nil
-            }
-
-            let deleteErrors = results.deleteResults.values.compactMap { result -> (any Error)? in
-
-                if case .failure(let error) = result { return error }
-
-                return nil
-            }
-
-            if let failure = firstUnexpectedFailure(saveErrors: saveErrors, deleteErrors: deleteErrors) { throw failure }
+            try await write(records, recordIDs)
         }
         catch {
 
@@ -97,8 +112,8 @@ enum CloudKitBatch {
             let (saveHead, saveTail) = records.halved()
             let (deleteHead, deleteTail) = recordIDs.halved()
 
-            try await perform(saving: saveHead, deleting: deleteHead, in: database)
-            try await perform(saving: saveTail, deleting: deleteTail, in: database)
+            try await perform(saving: saveHead, deleting: deleteHead, using: write)
+            try await perform(saving: saveTail, deleting: deleteTail, using: write)
         }
     }
 }
