@@ -62,63 +62,46 @@ import Observation
         let query = CKQuery(recordType: RecordType.vote, predicate: NSPredicate(value: true))
         query.sortDescriptors = [NSSortDescriptor(key: FieldKey.creationDate, ascending: false)]
 
-        var cursor: CKQueryOperation.Cursor?
-        var pages = 0
-
-        repeat {
-
-            guard pages < CloudKitErrorHandler.maxQueryPages else {
-
-                loadError = CloudKitErrorHandler.incompleteLoad
-                break
-            }
-
-            pages += 1
-
-            do {
-
-                let page: (matchResults: [(CKRecord.ID, Result<CKRecord, any Error>)], queryCursor: CKQueryOperation.Cursor?)
-
-                if let cursor {
-
-                    page = try await database.records(continuingMatchFrom: cursor, desiredKeys: [FieldKey.request])
-                }
-                else {
-
-                    page = try await database.records(matching: query, desiredKeys: [FieldKey.request])
-                }
+        let outcome = await CloudKitPaging.forEachPage(
+            first: { try await database.records(matching: query, desiredKeys: [FieldKey.request]) },
+            next: { (cursor: CKQueryOperation.Cursor) in
+                try await database.records(continuingMatchFrom: cursor, desiredKeys: [FieldKey.request])
+            },
+            body: { matchResults in
 
                 // Count the votes that loaded, but flag the tally as low if any entry failed.
-                if let failure = CloudKitErrorHandler.firstMatchFailure(in: page.matchResults) {
+                if let failure = CloudKitErrorHandler.firstMatchFailure(in: matchResults) {
 
                     loadError = failure
                 }
 
-                for (_, result) in page.matchResults {
+                for (_, result) in matchResults {
 
                     guard let record = try? result.get(),
-                          let reference = record[FieldKey.request] as? CKRecord.Reference else { continue }
+                          let entry = VoteEntry(record: record) else { continue }
 
-                    entries.append(VoteEntry(request: reference.recordID,
-                                             voter: record.creatorUserRecordID?.recordName ?? record.recordID.recordName))
+                    entries.append(entry)
 
                     if container.isCurrentUser(record.creatorUserRecordID) {
 
-                        mine.insert(reference.recordID)
+                        mine.insert(entry.request)
                     }
                 }
+            })
 
-                cursor = page.queryCursor
-            }
-            catch {
+        switch outcome {
 
-                // Keep whatever was counted; a half-loaded tally beats an empty board. Surface it though.
-                loadError = CloudKitErrorHandler.classifyQuery(error)
+        case .finished:
+            break
 
-                break
-            }
+        case .reachedPageCap:
+            loadError = CloudKitErrorHandler.incompleteLoad
+
+        case .failed(let error):
+
+            // Keep whatever was counted; a half-loaded tally beats an empty board. Surface it though.
+            loadError = CloudKitErrorHandler.classifyQuery(error)
         }
-        while cursor != nil
 
         tallies = Self.distinctTallies(entries)
         myVotes = mine
@@ -131,6 +114,21 @@ import Observation
         /// The creator's record name, or - if CloudKit did not return one - the vote's own record name,
         /// so an anonymous row still counts once rather than being dropped.
         let voter: String
+
+        init(request: CKRecord.ID, voter: String) {
+
+            self.request = request
+            self.voter = voter
+        }
+
+        /// The entry a `Vote` record contributes, or `nil` if it has no request reference.
+        init?(record: CKRecord) {
+
+            guard let reference = record[FieldKey.request] as? CKRecord.Reference else { return nil }
+
+            self.init(request: reference.recordID,
+                      voter: record.creatorUserRecordID?.recordName ?? record.recordID.recordName)
+        }
     }
 
     /// Counts **distinct voters** per request, not raw `Vote` records.
@@ -225,44 +223,22 @@ import Observation
         let query = CKQuery(recordType: RecordType.vote, predicate: predicate)
 
         var voters: Set<String> = []
-        var cursor: CKQueryOperation.Cursor?
-        var pages = 0
 
         // Paged like `loadTallies()`: a single page silently dropped voters beyond the first batch.
-        repeat {
+        // Stopping at the page cap or on a failed page notifies whoever was found so far rather than
+        // nobody, and never loops on a continuation that does not end.
+        _ = await CloudKitPaging.forEachPage(
+            first: { try await database.records(matching: query, desiredKeys: [FieldKey.request]) },
+            next: { (cursor: CKQueryOperation.Cursor) in
+                try await database.records(continuingMatchFrom: cursor, desiredKeys: [FieldKey.request])
+            },
+            body: { matchResults in
 
-            // Notify whoever was found so far rather than looping on a continuation that never ends.
-            guard pages < CloudKitErrorHandler.maxQueryPages else { break }
-
-            pages += 1
-
-            do {
-
-                let page: (matchResults: [(CKRecord.ID, Result<CKRecord, any Error>)], queryCursor: CKQueryOperation.Cursor?)
-
-                if let cursor {
-
-                    page = try await database.records(continuingMatchFrom: cursor, desiredKeys: [FieldKey.request])
-                }
-                else {
-
-                    page = try await database.records(matching: query, desiredKeys: [FieldKey.request])
-                }
-
-                for (_, result) in page.matchResults {
+                for (_, result) in matchResults {
 
                     if let name = (try? result.get())?.creatorUserRecordID?.recordName { voters.insert(name) }
                 }
-
-                cursor = page.queryCursor
-            }
-            catch {
-
-                // Notify whoever was found so far rather than nobody.
-                break
-            }
-        }
-        while cursor != nil
+            })
 
         return Array(voters)
     }
