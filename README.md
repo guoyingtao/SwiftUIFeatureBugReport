@@ -137,24 +137,11 @@ requires a new build.
 
 ### 4. Notification strings — nothing to do
 
-Push notification text is sent as localization keys that **are** their own en-GB strings, so there is no
-setup step here. An app that adds nothing shows the English:
-
-```text
-"Status updated"
-"New reply"
-"Marked complete"
-"Your image was approved"
-"Your image was removed"
-"Shipped"
-"New request"
-"A user created a new request."
-"%@"
-```
-
-To translate them, add those as keys to the host app's `Localizable.xcstrings` or
-`Localizable.strings` and translate them there. `%@` is the activity notification's title, which CloudKit
-fills with the request's own title.
+Push notification text comes from the package's own catalogue, in English or Simplified Chinese, so
+there is no setup step here and nothing to add to the host app. A subscription's text is fixed when it
+is saved, so each one is saved on the recipient's own device, in their language, and saved again when
+a feedback screen opens. The one exception is the activity notification's title, which CloudKit fills
+with the request's own title and is sent as the localization key `%@`.
 
 Notification permission is requested after the user's first successful submission rather than when the
 board opens. See [Notifications](Docs/Notifications.md).

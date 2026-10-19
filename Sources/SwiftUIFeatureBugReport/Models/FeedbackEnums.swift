@@ -178,16 +178,8 @@ public enum ActivityKind: String, CaseIterable, Sendable, Hashable {
         }
     }
 
-    /// The `alertLocalizationKey` used by the push subscription for this kind (§8.1).
-    ///
-    /// The key **is** the en-GB source string, as it is for every other string in this package (see
-    /// `Package.swift`). Push keys resolve against the **host app's** bundle, not the package's, and a
-    /// key with no entry there is displayed verbatim - which is why the old `ACTIVITY_COMMENT` tokens
-    /// arrived on screen as machine text whenever an integrator had not copied them into a catalogue.
-    ///
-    /// Written in English the fallback costs nothing: an app that translates nothing still shows a
-    /// readable sentence, and an app that wants these in another language adds the same strings to its
-    /// own catalogue and translates them there.
+    /// The en-GB source string of this kind's push body (§8.1), which is also its catalogue key. The push
+    /// sends `localizedText`, its translation; this stays as the stable, readable identifier.
     public var localizationKey: String {
 
         switch self {
@@ -198,6 +190,23 @@ public enum ActivityKind: String, CaseIterable, Sendable, Hashable {
         case .imageApproved: return "Your image was approved"
         case .imageRejected: return "Your image was removed"
         case .shipped: return "Shipped"
+        }
+    }
+
+    /// `localizationKey`, translated by the package's own catalogue. This is what the activity push now
+    /// carries as its body: a localization key resolves against the host app's bundle, which does not
+    /// have the package's translations. Fixed when the subscription is saved, in the language of the
+    /// device that saved it - the recipient's own.
+    public var localizedText: String {
+
+        switch self {
+
+        case .status: return loc("Status updated")
+        case .comment: return loc("New reply")
+        case .complete: return loc("Marked complete")
+        case .imageApproved: return loc("Your image was approved")
+        case .imageRejected: return loc("Your image was removed")
+        case .shipped: return loc("Shipped")
         }
     }
 }

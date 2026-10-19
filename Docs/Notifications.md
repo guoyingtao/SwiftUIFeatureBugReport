@@ -5,41 +5,25 @@ a notification server.
 
 ## Notification text
 
-CloudKit delivers localization keys, and the device resolves them against the host app. Every key the
-package sends **is its own en-GB source string**, the same convention the rest of the package uses:
+A subscription's text is fixed **when the subscription is saved**, not per event. The package saves
+every subscription on the recipient's own device and sends concrete text from its own catalogue
+(`Resources/Localizable.xcstrings`, English and Simplified Chinese), so the notification arrives in the
+language that device was using:
 
-```text
-"Status updated"
-"New reply"
-"Marked complete"
-"Your image was approved"
-"Your image was removed"
-"Shipped"
-"New request"
-"A user created a new request."
-"New comment"
-"A user commented on a request."
-"%@"
-```
+| Notification | English (en-GB source) |
+| --- | --- |
+| Activity, body | "Status updated", "New reply", "Marked complete", "Your image was approved", "Your image was removed", "Shipped" |
+| Developer, new request | "New request" / "A user created a new request." |
+| Developer, new comment | "New comment" / "A user commented on a request." |
 
-**Nothing here has to be added to the host app.** A push key with no entry in the app's catalog is
-displayed verbatim, so an app that adds none of these shows the English above. Earlier versions sent
-tokens such as `ACTIVITY_COMMENT`, which is what arrived on the lock screen in that case.
+**Nothing has to be added to the host app.** Earlier versions sent these as localization keys, which
+iOS resolves against the *host app's* bundle - so they stayed English unless the app copied them into
+its own catalogue. The one key still sent is the activity title, `%@`: CloudKit substitutes the
+triggering request's title for it, and there is no English in that line to translate. To put something
+around it, give `%@` an entry in the app's catalogue — `"%@" = "Update: %@";`.
 
-`%@` is the activity title: CloudKit substitutes the triggering record's request title for it. There is
-no English in that line to translate, because the one value it carries is a title the user typed.
-Bodies take no arguments.
-
-## Translating them
-
-Add the strings above to the host app's `Localizable.xcstrings` or `Localizable.strings` as keys, and
-translate them there. Keys resolve on-device, so adding a language or rewording a translation needs
-nothing from the subscription.
-
-To put something around the request title, give `%@` an entry — `"%@" = "Update: %@";`.
-
-Rewording the **English** in the package is different: the English *is* the key, so the subscription
-starts pushing a different one and has to be saved again before any device sees it. See below.
+The public subscriptions are saved again every time a feedback screen starts, so a changed language
+or rewording reaches the server the next time the board opens.
 
 ## Permission and registration
 
@@ -55,11 +39,9 @@ developer who has already answered is not asked again.
 Once permission exists, the app registers with APNs on every launch. CloudKit subscriptions use
 deterministic IDs and are safely attempted again during startup.
 
-A subscription's text is fixed **when the subscription is saved**, not per event, so changing any of the
-keys above only reaches devices once the subscription is saved again. Saving over an existing ID
-replaces it, which the next launch does. If old wording keeps arriving, delete the subscription in
-CloudKit Console and relaunch — `ActivityService` swallows save errors by design, since a subscription
-that already exists is the expected outcome rather than a failure.
+Saving over an existing ID replaces it, which the next launch does. If old wording keeps arriving,
+delete the subscription in CloudKit Console and relaunch — `ActivityService` swallows save errors by
+design, since a subscription that already exists is the expected outcome rather than a failure.
 
 Required app capabilities:
 

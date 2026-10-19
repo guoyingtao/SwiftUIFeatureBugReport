@@ -3,6 +3,7 @@
 //  SwiftUIFeatureBugReportTests
 //
 
+import Foundation
 import Testing
 
 @testable import SwiftUIFeatureBugReport
@@ -44,6 +45,27 @@ struct NotificationLocalizationTests {
             #expect(key.first?.isUppercase == true, "\(key) should read as a sentence")
             #expect(key != key.uppercased(), "\(key) looks like a SCREAMING_CASE token")
             #expect(!key.contains("_"), "\(key) looks like a SCREAMING_CASE token")
+        }
+    }
+
+    /// Bodies are now sent as concrete text from the package's catalogue, because a localization key
+    /// resolves in the host app's bundle, which does not have the package's translations.
+    @Test("Every push body and developer line has a Chinese translation in the package")
+    func translated() throws {
+
+        let path = try #require(Bundle.feedbackResources.path(forResource: "zh-Hans", ofType: "lproj"))
+        let zh = try #require(Bundle(path: path))
+
+        var keys = ActivityKind.allCases.map(\.localizationKey)
+
+        keys += [ActivityService.developerNotificationTitle, ActivityService.developerNotificationBody,
+                 ActivityService.developerCommentTitle, ActivityService.developerCommentBody]
+
+        for key in keys {
+
+            let value = zh.localizedString(forKey: key, value: "MISSING", table: nil)
+
+            #expect(value != "MISSING" && value != key, "\(key) is not translated")
         }
     }
 

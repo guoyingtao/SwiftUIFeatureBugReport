@@ -161,15 +161,13 @@ import UserNotifications
 
     /// One subscription per `kind` (§8.1).
     ///
-    /// `CKSubscription.NotificationInfo` is fixed **when the subscription is created**, not per event,
-    /// so a literal `alertBody` would be identical forever. Dynamic text has to come from
-    /// `alertLocalizationKey` plus `alertLocalizationArgs`, where the args are **field names** and
-    /// CloudKit substitutes their values from the triggering record server-side.
-    ///
-    /// Every key here is its own en-GB source string rather than a token like `ACTIVITY_COMMENT`. Keys
-    /// resolve against the host app's bundle and a missing one is shown verbatim, so the tokens were
-    /// arriving on screen as machine text in any app that had not copied them into a catalogue. English
-    /// keys make that fallback harmless and still leave the strings translatable by the integrator.
+    /// `CKSubscription.NotificationInfo` is fixed **when the subscription is created**, not per event.
+    /// The title is dynamic, so it stays a localization key with `titleLocalizationArgs` - **field
+    /// names** whose values CloudKit substitutes server-side. The body is one fixed sentence per kind,
+    /// so it is sent as concrete text from the package's own catalogue (`ActivityKind.localizedText`):
+    /// a localization key would resolve against the host app's bundle, which does not have the
+    /// package's translations. The subscription is saved on the recipient's device, in their language,
+    /// and saved again on every launch, so a language change reaches it.
     ///
     /// The status value itself is deliberately kept out of the push: one subscription means one format
     /// string, and pushing a raw value like `updatePending` through `%@` leaks machine strings into
@@ -197,7 +195,7 @@ import UserNotifications
 
             info.titleLocalizationKey = Self.activityTitleFormat
             info.titleLocalizationArgs = [FieldKey.requestTitle]
-            info.alertLocalizationKey = kind.localizationKey
+            info.alertBody = kind.localizedText
             info.shouldSendContentAvailable = true
             info.desiredKeys = [FieldKey.request, FieldKey.kind, FieldKey.message]
             info.soundName = "default"
@@ -208,21 +206,20 @@ import UserNotifications
         }
     }
 
-    /// The two lines of the developer's new-request push, in en-GB.
+    /// The two lines of the developer's new-request push, as en-GB source strings. The push itself
+    /// carries their translation from the package's catalogue.
     ///
     /// Neither takes an argument: the request's own title is not pushed, because one subscription means
-    /// one fixed format string and the portal queue is a tap away. That leaves them as plain sentences an
-    /// integrator can translate, or leave exactly as they read here.
+    /// one fixed string and the portal queue is a tap away.
     nonisolated static let developerNotificationTitle = "New request"
     nonisolated static let developerNotificationBody = "A user created a new request."
 
     /// Fires when anyone *else* creates a request (§8.2). The `creatorID != me` clause is what stops
     /// the developer being notified of their own test submissions.
     ///
-    /// Sent as localization keys whose keys are the English sentences above, the same convention as the
-    /// activity subscriptions. This notification used to push `ACTIVITY_TITLE` and `NEW_REQUEST`, which
-    /// is what a developer saw on the lock screen unless they had copied both tokens into their app's
-    /// catalogue. An English key shown verbatim is already the notification.
+    /// Sent as concrete text in the developer's language, like the activity bodies. (It once pushed the
+    /// tokens `ACTIVITY_TITLE` and `NEW_REQUEST`, and later English localization keys, both of which
+    /// depended on the host app's catalogue.)
     public func registerDeveloperSubscription() async {
 
         guard container.isDeveloper, let me = container.currentUserRecordID else { return }
@@ -236,8 +233,9 @@ import UserNotifications
 
         let info = CKSubscription.NotificationInfo()
 
-        info.titleLocalizationKey = Self.developerNotificationTitle
-        info.alertLocalizationKey = Self.developerNotificationBody
+        // Concrete text from the package's catalogue, in this device's language (see `localizedText`).
+        info.title = loc("New request")
+        info.alertBody = loc("A user created a new request.")
         info.shouldSendContentAvailable = true
         info.desiredKeys = [FieldKey.title, FieldKey.type]
         info.soundName = "default"
@@ -283,8 +281,8 @@ import UserNotifications
 
         let info = CKSubscription.NotificationInfo()
 
-        info.titleLocalizationKey = Self.developerCommentTitle
-        info.alertLocalizationKey = Self.developerCommentBody
+        info.title = loc("New comment")
+        info.alertBody = loc("A user commented on a request.")
         info.shouldSendContentAvailable = true
         info.desiredKeys = [FieldKey.request, FieldKey.creatorID]
         info.soundName = "default"
