@@ -23,6 +23,7 @@ import Observation
     public let moderation: ModerationService
     public let accountData: AccountDataService
     public let privateReports: PrivateReportService
+    public let privateNotifications: PrivateNotificationService
 
     /// Set once permission has been asked for, so it is asked once per session whichever route got
     /// there - a user's first submission, or a developer opening the portal.
@@ -60,6 +61,7 @@ import Observation
                                             follows: follows)
         self.accountData = AccountDataService(container: container)
         self.privateReports = PrivateReportService(container: container)
+        self.privateNotifications = PrivateNotificationService(container: container)
 
         // `.CKAccountChanged` re-resolves identity inside the container; everything derived from the
         // old identity has to go with it, or the board keeps showing the previous account's votes.
@@ -153,6 +155,27 @@ import Observation
             await activity.registerDeveloperSubscription()
             await activity.registerDeveloperCommentSubscription()
         }
+
+        // Private feedback's pushes, both ways. Without permission this does nothing at all - the
+        // prompt waits for `didSendPrivateFeedback` or the developer opening the portal.
+        if container.identityState == .ready {
+
+            await privateNotifications.refreshIfAuthorized()
+        }
+    }
+
+    /// Call after the user has sent a private report or a follow-up. The package's own form and
+    /// conversation screens already do.
+    ///
+    /// This is the moment the sender has a reason to want a push - "tell me when they answer" - so it
+    /// is where the system prompt appears, once per install, and only while permission is undecided.
+    /// Fire-and-forget: the submission has already succeeded and nothing waits on the prompt.
+    public func didSendPrivateFeedback() {
+
+        Task { @MainActor [weak self] in
+
+            await self?.privateNotifications.requestAuthorizationAndRegister()
+        }
     }
 
     /// Asked when the developer opens the portal, rather than at launch or on submission (§8.3).
@@ -167,19 +190,26 @@ import Observation
     /// status is `.notDetermined`, so a developer who has already answered is never re-asked.
     public func askForDeveloperNotificationsIfNeeded() async {
 
-        // Both developer pushes are about public records, which private-only mode has none of.
-        guard container.isDeveloper, hasPublicBoard, !hasAskedForNotifications else { return }
+        // The public pushes are about public records, which private-only mode has none of; the private
+        // ones need private feedback and `privateNotifications`.
+        let wantsPublic = hasPublicBoard
+        let wantsPrivate = !privateNotifications.kinds.isEmpty
+
+        guard container.isDeveloper, wantsPublic || wantsPrivate, !hasAskedForNotifications else { return }
 
         hasAskedForNotifications = true
 
-        // The subscriptions themselves save without permission and already did so at startup. What a
+        // The public subscriptions save without permission and already did so at startup. What a
         // grant adds is the APNs registration, which `requestNotificationAuthorization` performs
         // itself; re-saving covers identity having resolved after that startup pass.
-        if await activity.requestNotificationAuthorization() {
+        if wantsPublic, await activity.requestNotificationAuthorization() {
 
             await activity.registerDeveloperSubscription()
             await activity.registerDeveloperCommentSubscription()
         }
+
+        // Prompts only if the public half has not just done so; otherwise answers from the setting.
+        if wantsPrivate { await privateNotifications.requestAuthorizationAndRegister() }
     }
 
     public func load() async {

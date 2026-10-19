@@ -247,6 +247,26 @@
         }
       }
     },
+    "A user replied on their private feedback." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有用户在私密反馈中发来了新回复。"
+          }
+        }
+      }
+    },
+    "A user sent new private feedback." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有用户提交了新的私密反馈。"
+          }
+        }
+      }
+    },
     "Abusive" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1175,6 +1195,16 @@
         }
       }
     },
+    "Feedback update" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "反馈有新进展"
+          }
+        }
+      }
+    },
     "Feedback with a file attached is always sent privately. Remove the file to post publicly." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1751,12 +1781,32 @@
         }
       }
     },
+    "New private feedback" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新的私密反馈"
+          }
+        }
+      }
+    },
     "New reply" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "新回复"
+          }
+        }
+      }
+    },
+    "New reply on private feedback" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "私密反馈有新回复"
           }
         }
       }
@@ -2927,6 +2977,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "这条反馈的附件已变化，请重新加载后再试。"
+          }
+        }
+      }
+    },
+    "The developer replied to or updated your feedback." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开发者回复或更新了你的反馈。"
           }
         }
       }

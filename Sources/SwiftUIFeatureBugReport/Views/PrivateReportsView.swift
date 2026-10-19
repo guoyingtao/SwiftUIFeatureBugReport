@@ -760,6 +760,9 @@ struct PrivateReportDetailView: View {
                 try await store.privateReports.sendFollowUp(message, on: report)
 
                 replyText = ""
+
+                // Not awaited: may show the one-time notification prompt, after the save.
+                store.didSendPrivateFeedback()
             }
             catch {
 

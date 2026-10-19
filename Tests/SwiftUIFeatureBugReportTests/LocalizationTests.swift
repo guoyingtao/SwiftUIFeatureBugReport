@@ -53,6 +53,9 @@ struct LocalizationTests {
             "Cancel": "取消",
             "My private reports": "我的私密反馈",
             "New request": "新反馈",
+            "The developer replied to or updated your feedback.": "开发者回复或更新了你的反馈。",
+            "New private feedback": "新的私密反馈",
+            "New reply on private feedback": "私密反馈有新回复",
         ]
 
         for (key, value) in expected {

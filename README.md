@@ -70,8 +70,9 @@ entitlements cannot be read (an unusual signing setup), the container is created
 
 Only then does the package touch CloudKit, `UserDefaults` (keys prefixed `com.swiftuifeaturebugreport.`),
 the temporary directory, or notifications. It asks for notification permission at a user's first
-submission or when a developer opens the portal, and re-registers for remote notifications only if the
-app already has permission. If you use `FeedbackStore` or its services directly, call `prepare()` first
+submission (public or private, including a private follow-up) or when a developer opens the portal -
+never at launch and never merely for opening the board - and re-registers for remote notifications only
+if the app already has permission. If you use `FeedbackStore` or its services directly, call `prepare()` first
 and do not proceed when it returns `.unavailable`.
 
 > **Adding the iCloud capability can change your app's own data stack.** With CloudKit in the
@@ -90,9 +91,14 @@ Budget about 20 minutes. Complete these steps in order.
 In your app target, open **Signing & Capabilities**:
 
 1. Add **iCloud**, enable **CloudKit**, and select or create your container.
-2. Add **Push Notifications**.
+2. Add **Push Notifications** (the `aps-environment` entitlement).
 
 The identifier passed to `FeedbackConfiguration` must appear in the app's iCloud entitlement.
+Push Notifications is only needed for pushes: without it nothing breaks or crashes - APNs registration
+just fails quietly and no notification arrives. The package calls `registerForRemoteNotifications()`
+itself (only after permission exists), and CloudKit's pushes are ordinary alerts that iOS displays with
+no code in the app. You don't need an app delegate or `UNUserNotificationCenterDelegate`; add one only
+if you want banners while the app is in the foreground or custom tap handling.
 
 ### 2. Import a schema
 
@@ -207,6 +213,23 @@ Leave it `.disabled` until `PrivateReport` is deployed. See [Privacy](Docs/Priva
 Every other mode behaves exactly as before. In `.only` mode don't embed `RoadmapView`, `UpdatesView`
 or `RequestDetailView` yourself; they are public-board screens. The public record types can stay in
 the schema; they are simply unused.
+
+#### Private feedback notifications
+
+With private feedback enabled, pushes go both ways. `privateNotifications: true` is the default;
+pass `false` (the last `FeedbackConfiguration` parameter) to turn them off.
+
+| Who | When | Title / body (en-GB; translated to zh-Hans) |
+| --- | --- | --- |
+| Sender | A developer replies to, changes the status of, or removes an attachment from their private report | "Feedback update" / "The developer replied to or updated your feedback." |
+| Developer | Someone else sends a new private report from this app | "New private feedback" / "A user sent new private feedback." |
+| Developer | A sender adds a follow-up to a report from this app | "New reply on private feedback" / "A user replied on their private feedback." |
+
+Nothing anyone typed is pushed. Permission is asked right after a user sends a private report or a
+follow-up (without delaying the submission), and when a developer opens the portal; after that,
+opening the board only re-registers if permission exists. No schema change is needed: the
+subscriptions use `PrivateReport.creatorID`, `PrivateReport.appID` and `PrivateReply.appID`, which are
+already `QUERYABLE`. Details in [Notifications](Docs/Notifications.md#private-feedback).
 
 #### File attachments on private reports
 

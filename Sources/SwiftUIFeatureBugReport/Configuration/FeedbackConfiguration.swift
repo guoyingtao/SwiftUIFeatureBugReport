@@ -101,6 +101,13 @@ public struct FeedbackConfiguration: Sendable {
     /// joined it, so its existing feedback stays visible.
     public let includeUnscopedRecords: Bool
 
+    /// Whether private feedback sends push notifications: to the sender when a developer replies to or
+    /// updates their report, and to developers when a private report or a follow-up arrives. Defaults to
+    /// `true`; it needs the Push Notifications capability, and without it nothing breaks - the pushes
+    /// simply never arrive. Permission is asked only after the user sends private feedback (or a
+    /// developer opens the portal), never at launch. See README > Notifications.
+    public let privateNotifications: Bool
+
     /// The scope derived from `appID` and `includeUnscopedRecords`.
     public var appScope: AppScope { AppScope(appID: appID, includesUnscopedRecords: includeUnscopedRecords) }
 
@@ -115,7 +122,8 @@ public struct FeedbackConfiguration: Sendable {
                 allowFileAttachments: Bool = false,
                 maxFileAttachmentBytes: Int = 20 * 1024 * 1024,
                 maxFileAttachments: Int = 3,
-                allowedFileTypes: [UTType] = FeedbackConfiguration.defaultAllowedFileTypes) {
+                allowedFileTypes: [UTType] = FeedbackConfiguration.defaultAllowedFileTypes,
+                privateNotifications: Bool = true) {
 
         self.containerIdentifier = containerIdentifier
         self.developerUserRecordIDs = developerUserRecordIDs
@@ -129,6 +137,7 @@ public struct FeedbackConfiguration: Sendable {
         self.maxFileAttachmentBytes = max(1, maxFileAttachmentBytes)
         self.maxFileAttachments = max(1, maxFileAttachments)
         self.allowedFileTypes = allowedFileTypes.isEmpty ? FeedbackConfiguration.defaultAllowedFileTypes : allowedFileTypes
+        self.privateNotifications = privateNotifications
     }
 
 }

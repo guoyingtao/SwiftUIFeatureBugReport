@@ -483,6 +483,9 @@ struct FeedbackFormViewContent: View {
                     // Uploaded; the temporary copies have done their job.
                     attachedFiles.forEach { $0.discard() }
                     files = []
+
+                    // Not awaited: may show the one-time notification prompt, after the save.
+                    store.didSendPrivateFeedback()
                 }
                 else {
 

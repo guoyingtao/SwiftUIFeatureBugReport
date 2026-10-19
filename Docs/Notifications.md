@@ -1,7 +1,7 @@
 # Notifications
 
-The package uses CloudKit query subscriptions for activity updates and new requests. It does not run
-a notification server.
+The package uses CloudKit query subscriptions for activity updates, new requests and private
+feedback. It does not run a notification server.
 
 ## Notification text
 
@@ -66,3 +66,64 @@ The developer's two notifications write no `Activity` record, so they do not app
 feed. The portal queue is the developer's durable view and the push is only the nudge to open it. A
 developer reply, by contrast, does write one, so the user sees it in Updates even if the push was
 missed or notification permission was refused.
+
+## Private feedback
+
+With `privateFeedback` other than `.disabled` and `privateNotifications: true` (the default), three
+more query subscriptions are saved on the **public** database:
+
+| Kind | Saved on | Record type | Fires on | Predicate | Subscription ID |
+| --- | --- | --- | --- | --- | --- |
+| Report updated | every device that sends private feedback | `PrivateReport` | update | `creatorID == me` (+ `appID`) | `private-report-updated-<me>-<appID>` |
+| New report | developer devices | `PrivateReport` | creation | `creatorID != me` (+ `appID`) | `developer-private-report-<me>-<appID>` |
+| New follow-up | developer devices | `PrivateReply` | creation | `appID` (or everything when unscoped) | `developer-private-followup-<me>-<appID>` |
+
+CloudKit only notifies a subscriber who can **read** the matching record, so the schema's grants keep
+these private: `_creator` reads its own `PrivateReport`, `dev` reads all of them. A sender cannot write
+their `PrivateReport` (`_creator` has READ only), so every update the first subscription sees is a
+developer's: a reply (appended to `replies`), a status change, or an attachment removed. CloudKit
+cannot fire on "a particular field changed", so all three notify; the text says "replied to or
+updated". A forged `creatorID` gains nothing, because the push goes only to the record's real creator.
+
+The `appID` clause is dropped when `includeUnscopedRecords` is on (CloudKit cannot match a missing
+field), and the ID suffix is dropped when there is no `appID`. All predicate fields -
+`PrivateReport.creatorID`, `PrivateReport.appID`, `PrivateReply.appID` - are already `QUERYABLE` in
+both schemas, so **no schema import is needed**.
+
+### Text and language
+
+Titles and bodies are concrete strings from the package's catalogue, chosen when the subscription is
+saved on the recipient's device - so in the recipient's language. They are generic on purpose:
+
+- "Feedback update" / "The developer replied to or updated your feedback." (反馈有新进展 / 开发者回复或更新了你的反馈。)
+- "New private feedback" / "A user sent new private feedback." (新的私密反馈 / 有用户提交了新的私密反馈。)
+- "New reply on private feedback" / "A user replied on their private feedback." (私密反馈有新回复 / 有用户在私密反馈中发来了新回复。)
+
+Each save is recorded under `com.swiftuifeaturebugreport.pushSubscription.<ID>` in `UserDefaults`
+with a signature of the language, the text and the predicate. The subscription is saved again when that
+signature changes (a new language, new wording, a different app scope) or once a day, and skipped
+otherwise. Pushes are alert-only (`content-available` is off) and carry only `appID` (and the report
+reference for follow-ups).
+
+### Permission
+
+- A sender is asked **right after** sending a private report or a follow-up, in a detached task, so
+  the submission never waits on the prompt. Hosts calling `PrivateReportService.submit` /
+  `sendFollowUp` directly can call `FeedbackStore.didSendPrivateFeedback()` to get the same.
+- A developer is asked when they open the portal.
+- Opening the board never prompts; it registers with APNs and checks the subscriptions only when
+  permission already exists (authorised or provisional).
+- The system prompt only ever appears while the status is undecided. Denied stays denied, silently.
+
+Every failure - no permission, no `aps-environment`, no network, a schema without the record types -
+is logged under the `com.swiftuifeaturebugreport` / `push` log category and otherwise ignored.
+
+### Caveats
+
+- Test pushes on a real device. CloudKit subscription pushes to the Simulator are unreliable at best.
+- Development builds (Xcode) use the APNs sandbox and the CloudKit Development environment;
+  TestFlight and App Store builds use production and the Production environment. Subscriptions are
+  per environment and per iCloud account, so each is created separately.
+- iOS shows these alerts when the app is in the background or not running. In the foreground nothing
+  is shown unless the host app's `UNUserNotificationCenterDelegate` returns `.banner` from
+  `willPresent`; the package does not install a delegate.
