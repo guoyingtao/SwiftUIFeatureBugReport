@@ -354,6 +354,28 @@ flight.
 Pairing the two as separate tabs, as in [Sharing a store](#sharing-a-store), gives users both halves
 at once. Otherwise the board reaches the roadmap from its "more" menu.
 
+## Localisation
+
+The package ships its own translations: English (en-GB, the source language) and **Simplified
+Chinese** (zh-Hans), in `Sources/SwiftUIFeatureBugReport/Resources/Localizable.xcstrings`. Every
+user-facing string - screens, buttons, confirmation dialogs, errors, accessibility labels and push
+notification text - is looked up in the package's own resource bundle, never in `Bundle.main`, so the
+host app needs no keys of its own. Counts use proper plural rules ("1 vote" / "2 votes"; Chinese has
+no plural forms).
+
+- **Your app must itself be localised into Chinese** (Simplified) for users to see it: iOS and macOS
+  pick one language for the whole process from the languages the *app* declares, and SwiftUI's
+  locale follows. If the app has no `zh-Hans` localisation, the package shows English too.
+- Lookups do not fall back to the host app's catalogue, so a key in your app's `Localizable.xcstrings`
+  does not override the package's wording. To change a translation, edit the package's catalogue.
+- Text people typed (titles, bodies, replies) and your own metadata keys are never translated.
+- The resource bundle is found without SwiftPM's generated `Bundle.module`, which calls `fatalError`
+  when the bundle is missing; if it ever cannot be found, the package shows its English source strings.
+
+`LocalizationTests` checks that every looked-up string is in the catalogue with a Chinese
+translation, that no SwiftUI call takes a bare literal (which would resolve in `Bundle.main`), and
+that the built bundle carries `zh-Hans.lproj`.
+
 ## Navigation
 
 `FeedbackBoardView` uses the navigation container supplied by your app. On iOS, place it inside a

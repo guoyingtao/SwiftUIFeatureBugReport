@@ -56,7 +56,7 @@ struct PrivateReportsViewContent: View {
 #endif
     }
 
-    private var title: LocalizedStringKey { scope == .all ? "Private reports" : "My private reports" }
+    private var title: String { scope == .all ? loc("Private reports") : loc("My private reports") }
 
     @ViewBuilder private var list: some View {
 
@@ -67,7 +67,7 @@ struct PrivateReportsViewContent: View {
                 AppFilterPicker(selection: $appFilter, appIDs: store.privateReports.allReports.map(\.appID))
             }
         }
-        .ownedNavigationTitle(title, ownsStack: embedsNavigationStack)
+        .ownedNavigationTitle(Text(verbatim: title), ownsStack: embedsNavigationStack)
         .inlineNavigationTitle()
         .feedbackRefreshable { [store, scope] in await store.privateReports.load(scope) }
         .task {
@@ -186,7 +186,7 @@ struct PrivateReportsList<Header: View>: View {
             }
             else if store.privateReports.isLoading && reports.isEmpty {
 
-                Section { ProgressView("Loading…").frame(maxWidth: .infinity) }
+                Section { ProgressView(loc("Loading…")).frame(maxWidth: .infinity) }
             }
             else if reports.isEmpty && isFilteredEmpty {
 
@@ -215,18 +215,18 @@ struct PrivateReportsList<Header: View>: View {
 
                 } header: {
 
-                    if scope == .all { Text("^[\(reports.count) report](inflect: true)") }
-                    else if let listTitle { Text(listTitle) }
+                    if scope == .all { Text("\(reports.count) reports", bundle: .feedbackResources) }
+                    else if let listTitle { Text(listTitle, bundle: .feedbackResources) }
                 }
-                .confirmationDialog("Delete this private report?",
+                .confirmationDialog(loc("Delete this private report?"),
                                     isPresented: Binding(get: { pendingReportDeletion != nil },
                                                          set: { if !$0 { pendingReportDeletion = nil } }),
                                     titleVisibility: .visible,
                                     presenting: pendingReportDeletion) { report in
 
-                    Button("Delete report", role: .destructive) { deleteReport(report) }
+                    Button(loc("Delete report"), role: .destructive) { deleteReport(report) }
 
-                    Button("Cancel", role: .cancel) { pendingReportDeletion = nil }
+                    Button(loc("Cancel"), role: .cancel) { pendingReportDeletion = nil }
 
                 } message: { _ in Text(PrivateReportDetailView.deleteReportMessage) }
             }
@@ -236,22 +236,22 @@ struct PrivateReportsList<Header: View>: View {
                 Section { FeedbackErrorBanner(error: error, retry: nil) }
             }
         }
-        .confirmationDialog("Delete these private reports?",
+        .confirmationDialog(loc("Delete these private reports?"),
                             isPresented: Binding(get: { pendingProcess != nil },
                                                  set: { if !$0 { pendingProcess = nil } }),
                             titleVisibility: .visible,
                             presenting: pendingProcess) { request in
 
-            Button("Delete", role: .destructive) { process(request) }
+            Button(loc("Delete"), role: .destructive) { process(request) }
 
-            Button("Cancel", role: .cancel) { pendingProcess = nil }
+            Button(loc("Cancel"), role: .cancel) { pendingProcess = nil }
 
         } message: { request in
 
             switch request.scope {
 
-            case .all: Text("Every private report this person has sent is deleted, with its images, files and replies. This can't be undone.")
-            case .reports: Text("The requested reports are deleted, with their images, files and replies. This can't be undone.")
+            case .all: Text("Every private report this person has sent is deleted, with its images, files and replies. This can't be undone.", bundle: .feedbackResources)
+            case .reports: Text("The requested reports are deleted, with their images, files and replies. This can't be undone.", bundle: .feedbackResources)
             }
         }
     }
@@ -268,7 +268,7 @@ struct PrivateReportsList<Header: View>: View {
 
                     Button(role: .destructive, action: { pendingReportDeletion = report }) {
 
-                        Label("Delete report", systemImage: "trash")
+                        Label(loc("Delete report"), systemImage: "trash")
                     }
                 }
         }
@@ -333,8 +333,8 @@ struct PrivateReportsList<Header: View>: View {
 
                         switch request.scope {
 
-                        case .all: Text("All private reports")
-                        case .reports: Text("^[\(request.reportNames.count) report](inflect: true)")
+                        case .all: Text("All private reports", bundle: .feedbackResources)
+                        case .reports: Text("\(request.reportNames.count) reports", bundle: .feedbackResources)
                         }
 
                         Text(request.requesterID)
@@ -356,13 +356,13 @@ struct PrivateReportsList<Header: View>: View {
                     }
                     else {
 
-                        Button("Delete", role: .destructive) { pendingProcess = request }
+                        Button(loc("Delete"), role: .destructive) { pendingProcess = request }
                     }
                 }
             }
 
-        } header: { Text("Deletion requests") }
-          footer: { Text("People can't delete their own private reports, so they ask you to. Process these promptly.") }
+        } header: { Text("Deletion requests", bundle: .feedbackResources) }
+          footer: { Text("People can't delete their own private reports, so they ask you to. Process these promptly.", bundle: .feedbackResources) }
     }
 
     private func process(_ request: PrivateDeletionRequest) {
@@ -466,21 +466,21 @@ struct PrivateReportRow: View {
 
                 if !report.replies.isEmpty {
 
-                    Label("^[\(report.replies.count) reply](inflect: true)", systemImage: "bubble.left")
+                    Label(loc("\(report.replies.count) replies"), systemImage: "bubble.left")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
 
                 if !report.files.isEmpty {
 
-                    Label("^[\(report.files.count) file](inflect: true)", systemImage: "paperclip")
+                    Label(loc("\(report.files.count) files"), systemImage: "paperclip")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
 
                 if isDeletionPending {
 
-                    Label("Deletion requested", systemImage: "trash")
+                    Label(loc("Deletion requested"), systemImage: "trash")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -575,7 +575,7 @@ struct PrivateReportDetailView: View {
     /// what actually authorises the writes.
     private var showsDeveloperControls: Bool { scope == .all && store.container.isDeveloper }
 
-    private var title: LocalizedStringKey { scope == .all ? "Private report" : "My private report" }
+    private var title: String { scope == .all ? loc("Private report") : loc("My private report") }
 
     /// Developer-supplied keys, shown verbatim - they are the integrator's own identifiers.
     private var sortedMetadataKeys: [String] { report.metadata.keys.sorted() }
@@ -595,7 +595,7 @@ struct PrivateReportDetailView: View {
         }
         .formStyle(.grouped)
         // Never renames a Mac host window - see `ownedNavigationTitle`.
-        .ownedNavigationTitle(title, ownsStack: false)
+        .ownedNavigationTitle(Text(verbatim: title), ownsStack: false)
         .inlineNavigationTitle()
         .onChange(of: store.container.identityState) { _, _ in dismissIfIdentityChanged() }
         .onChange(of: store.container.currentUserRecordID) { _, _ in dismissIfIdentityChanged() }
@@ -605,11 +605,11 @@ struct PrivateReportDetailView: View {
                             titleVisibility: .visible,
                             presenting: pendingRemoval) { attachment in
 
-            Button("Remove", role: .destructive) { removeAttachment(attachment) }
+            Button(loc("Remove"), role: .destructive) { removeAttachment(attachment) }
 
-            Button("Cancel", role: .cancel) { }
+            Button(loc("Cancel"), role: .cancel) { }
 
-        } message: { _ in Text("It is deleted for the sender too. The report and its conversation are kept. This can't be undone.") }
+        } message: { _ in Text("It is deleted for the sender too. The report and its conversation are kept. This can't be undone.", bundle: .feedbackResources) }
     }
 
     @ViewBuilder private var reportSections: some View {
@@ -629,7 +629,7 @@ struct PrivateReportDetailView: View {
             Text(report.body)
                 .textSelection(.enabled)
 
-        } footer: { Label("Only you and the developer can see this.", systemImage: "lock") }
+        } footer: { Label(loc("Only you and the developer can see this."), systemImage: "lock") }
 
         if !report.imageURLs.isEmpty {
 
@@ -672,7 +672,7 @@ struct PrivateReportDetailView: View {
 
             if messages.isEmpty {
 
-                Text("No replies yet.")
+                Text("No replies yet.", bundle: .feedbackResources)
                     .foregroundStyle(.secondary)
             }
             else {
@@ -680,7 +680,7 @@ struct PrivateReportDetailView: View {
                 ForEach(messages) { message in PrivateMessageRow(message: message, viewer: scope == .all ? .developer : .submitter) }
             }
 
-        } header: { Text("Conversation") }
+        } header: { Text("Conversation", bundle: .feedbackResources) }
     }
 
     /// At the bottom of the conversation for both sides. A developer's message is stored on the report
@@ -695,7 +695,7 @@ struct PrivateReportDetailView: View {
 
                 sendButton(title: "Send reply", action: sendReply)
 
-            } footer: { Text("Only the person who sent this report can read your reply.") }
+            } footer: { Text("Only the person who sent this report can read your reply.", bundle: .feedbackResources) }
         }
         else if scope == .mine {
 
@@ -710,11 +710,11 @@ struct PrivateReportDetailView: View {
 
                 if acceptsFollowUp {
 
-                    Text("Only you and the developer can see this conversation. Messages can't be edited once sent.")
+                    Text("Only you and the developer can see this conversation. Messages can't be edited once sent.", bundle: .feedbackResources)
                 }
                 else {
 
-                    Text("This report is complete, so it no longer takes new messages. Send new feedback instead.")
+                    Text("This report is complete, so it no longer takes new messages. Send new feedback instead.", bundle: .feedbackResources)
                 }
             }
         }
@@ -731,7 +731,7 @@ struct PrivateReportDetailView: View {
 
             HStack {
 
-                Text(title)
+                Text(title, bundle: .feedbackResources)
 
                 if isSending {
 
@@ -778,7 +778,7 @@ struct PrivateReportDetailView: View {
 
             if store.privateReports.isDeletionPending(report) {
 
-                Label("Deletion requested. The developer will delete this report.", systemImage: "clock")
+                Label(loc("Deletion requested. The developer will delete this report."), systemImage: "clock")
                     .foregroundStyle(.secondary)
             }
             else {
@@ -787,7 +787,7 @@ struct PrivateReportDetailView: View {
 
                     HStack {
 
-                        Label("Ask the developer to delete this", systemImage: "trash")
+                        Label(loc("Ask the developer to delete this"), systemImage: "trash")
 
                         if isRequestingDeletion {
 
@@ -800,16 +800,16 @@ struct PrivateReportDetailView: View {
                 .disabled(isRequestingDeletion)
             }
 
-        } footer: { Text("Only the developer can delete private reports. It stays visible to you until they do.") }
-          .confirmationDialog("Ask the developer to delete this report?",
+        } footer: { Text("Only the developer can delete private reports. It stays visible to you until they do.", bundle: .feedbackResources) }
+          .confirmationDialog(loc("Ask the developer to delete this report?"),
                               isPresented: $showingDeletionConfirmation,
                               titleVisibility: .visible) {
 
-              Button("Request deletion", role: .destructive) { requestDeletion() }
+              Button(loc("Request deletion"), role: .destructive) { requestDeletion() }
 
-              Button("Cancel", role: .cancel) { }
+              Button(loc("Cancel"), role: .cancel) { }
 
-          } message: { Text("The report, its images, files and replies will be deleted once the developer processes your request.") }
+          } message: { Text("The report, its images, files and replies will be deleted once the developer processes your request.", bundle: .feedbackResources) }
     }
 
     private func requestDeletion() {
@@ -836,7 +836,7 @@ struct PrivateReportDetailView: View {
 
         Section {
 
-            Picker("Status", selection: Binding(get: { report.status }, set: { setStatus($0) })) {
+            Picker(loc("Status"), selection: Binding(get: { report.status }, set: { setStatus($0) })) {
 
                 ForEach(RequestStatus.allCases, id: \.self) { status in
 
@@ -844,7 +844,7 @@ struct PrivateReportDetailView: View {
                 }
             }
 
-        } header: { Text("Status") }
+        } header: { Text("Status", bundle: .feedbackResources) }
 
         Section {
 
@@ -858,15 +858,15 @@ struct PrivateReportDetailView: View {
                 LabeledContent(key, value: report.metadata[key] ?? "")
             }
 
-            LabeledContent { Text(report.creatorID).textSelection(.enabled) } label: { Text("Sender") }
+            LabeledContent { Text(report.creatorID).textSelection(.enabled) } label: { Text("Sender", bundle: .feedbackResources) }
 
-        } header: { Text("Details") }
+        } header: { Text("Details", bundle: .feedbackResources) }
     }
 
     // MARK: - Deleting the report
 
     /// The confirmation's explanation, shared with the queue's swipe action.
-    static let deleteReportMessage: LocalizedStringKey = "The report, its whole conversation and every image and file are permanently deleted, for the sender too. This can't be undone."
+    static var deleteReportMessage: String { loc("The report, its whole conversation and every image and file are permanently deleted, for the sender too. This can't be undone.") }
 
     /// Developer only, in the portal. Submitters get `deletionSection` instead.
     @ViewBuilder private var deleteReportSection: some View {
@@ -877,7 +877,7 @@ struct PrivateReportDetailView: View {
 
                 HStack {
 
-                    Label("Delete report", systemImage: "trash")
+                    Label(loc("Delete report"), systemImage: "trash")
 
                     if isDeletingReport {
 
@@ -889,14 +889,14 @@ struct PrivateReportDetailView: View {
             }
             .disabled(isDeletingReport)
 
-        } footer: { Text("Deletes this report and its conversation for you and the sender.") }
-          .confirmationDialog("Delete this private report?",
+        } footer: { Text("Deletes this report and its conversation for you and the sender.", bundle: .feedbackResources) }
+          .confirmationDialog(loc("Delete this private report?"),
                               isPresented: $showingDeleteReportConfirmation,
                               titleVisibility: .visible) {
 
-              Button("Delete report", role: .destructive) { deleteReport() }
+              Button(loc("Delete report"), role: .destructive) { deleteReport() }
 
-              Button("Cancel", role: .cancel) { }
+              Button(loc("Cancel"), role: .cancel) { }
 
           } message: { Text(Self.deleteReportMessage) }
     }
@@ -949,8 +949,8 @@ struct PrivateReportDetailView: View {
 
         switch pendingRemoval {
 
-        case .file(let file): return Text("Remove “\(file.name)”?")
-        case .image, nil: return Text("Remove this image?")
+        case .file(let file): return Text("Remove “\(file.name)”?", bundle: .feedbackResources)
+        case .image, nil: return Text("Remove this image?", bundle: .feedbackResources)
         }
     }
 
@@ -1046,13 +1046,13 @@ struct PrivateMessageRow: View {
 
     private var isOwn: Bool { message.author == viewer }
 
-    private var authorLabel: LocalizedStringKey {
+    private var authorLabel: String {
 
         switch (message.author, viewer) {
 
-        case (.submitter, .submitter): return "You"
-        case (.submitter, .developer): return "Sender"
-        case (.developer, _): return "Developer"
+        case (.submitter, .submitter): return loc("You")
+        case (.submitter, .developer): return loc("Sender")
+        case (.developer, _): return loc("Developer")
         }
     }
 

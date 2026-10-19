@@ -195,7 +195,7 @@ import Observation
         record[FieldKey.recipientID] = request.creatorID
         record[FieldKey.kind] = ActivityKind.comment.rawValue
         record[FieldKey.requestTitle] = request.title
-        record[FieldKey.message] = String(localized: "The developer replied to your request")
+        record[FieldKey.message] = String(localized: "The developer replied to your request", bundle: .feedbackResources)
 
         if let appID = request.appID { record[FieldKey.appID] = appID }
 

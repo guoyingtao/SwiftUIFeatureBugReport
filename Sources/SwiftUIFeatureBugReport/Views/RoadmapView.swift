@@ -79,8 +79,8 @@ struct RoadmapViewContent: View {
 
                     } header: {
 
-                        if group.version.isEmpty { Label("Completed", systemImage: "checkmark.circle.fill") }
-                        else { Label("Fixed in \(group.version)", systemImage: "checkmark.circle.fill") }
+                        if group.version.isEmpty { Label(loc("Completed"), systemImage: "checkmark.circle.fill") }
+                        else { Label(loc("Fixed in \(group.version)"), systemImage: "checkmark.circle.fill") }
                     }
                 }
             }
@@ -104,7 +104,7 @@ struct RoadmapViewContent: View {
 
                         ToolbarItem(placement: .confirmationAction) {
 
-                            Button("Done") { opened = nil }
+                            Button(loc("Done")) { opened = nil }
                         }
                     }
             }
@@ -121,7 +121,7 @@ struct RoadmapViewContent: View {
                 .font(.subheadline)
                 .lineLimit(2)
 
-            Text("^[\(store.votes.tally(for: request.id)) vote](inflect: true)")
+            Text("\(store.votes.tally(for: request.id)) votes", bundle: .feedbackResources)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

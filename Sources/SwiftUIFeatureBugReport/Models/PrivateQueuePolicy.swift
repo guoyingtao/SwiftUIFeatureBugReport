@@ -21,12 +21,12 @@ enum PrivateQueueFilter: String, CaseIterable, Hashable {
     case pending
     case all
 
-    var localised: LocalizedStringKey {
+    var localised: String {
 
         switch self {
 
-        case .pending: return "Pending"
-        case .all: return "All"
+        case .pending: return loc("Pending")
+        case .all: return loc("All")
         }
     }
 

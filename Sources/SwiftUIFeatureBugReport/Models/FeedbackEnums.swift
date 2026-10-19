@@ -23,12 +23,12 @@ public enum FeedbackType: String, CaseIterable, Sendable, Hashable {
         }
     }
 
-    public var localised: LocalizedStringKey {
+    public var localised: String {
 
         switch self {
 
-        case .bug: return "Bug"
-        case .feature: return "Feature"
+        case .bug: return loc("Bug")
+        case .feature: return loc("Feature")
         }
     }
 
@@ -61,14 +61,14 @@ public enum RequestStatus: String, CaseIterable, Sendable, Hashable {
         }
     }
 
-    public var localised: LocalizedStringKey {
+    public var localised: String {
 
         switch self {
 
-        case .open: return "Open"
-        case .inProgress: return "In Progress"
-        case .updatePending: return "Update Pending"
-        case .complete: return "Complete"
+        case .open: return loc("Open")
+        case .inProgress: return loc("In Progress")
+        case .updatePending: return loc("Update Pending")
+        case .complete: return loc("Complete")
         }
     }
 
@@ -208,12 +208,12 @@ public enum BoardSort: String, CaseIterable, Sendable, Hashable {
     case votes
     case mostRecent
 
-    public var localised: LocalizedStringKey {
+    public var localised: String {
 
         switch self {
 
-        case .votes: return "Votes"
-        case .mostRecent: return "Most Recent"
+        case .votes: return loc("Votes")
+        case .mostRecent: return loc("Most Recent")
         }
     }
 }
@@ -225,13 +225,13 @@ public enum BoardFilter: String, CaseIterable, Sendable, Hashable {
     case bugs
     case features
 
-    public var localised: LocalizedStringKey {
+    public var localised: String {
 
         switch self {
 
-        case .all: return "All"
-        case .bugs: return "Bugs"
-        case .features: return "Features"
+        case .all: return loc("All")
+        case .bugs: return loc("Bugs")
+        case .features: return loc("Features")
         }
     }
 
@@ -271,15 +271,15 @@ public enum ReportCategory: String, CaseIterable, Sendable, Hashable {
         }
     }
 
-    public var localised: LocalizedStringKey {
+    public var localised: String {
 
         switch self {
 
-        case .spam: return "Spam"
-        case .abusive: return "Abusive or offensive"
-        case .offTopic: return "Off topic"
-        case .duplicate: return "Duplicate"
-        case .other: return "Something else"
+        case .spam: return loc("Spam")
+        case .abusive: return loc("Abusive or offensive")
+        case .offTopic: return loc("Off topic")
+        case .duplicate: return loc("Duplicate")
+        case .other: return loc("Something else")
         }
     }
 
@@ -289,11 +289,11 @@ public enum ReportCategory: String, CaseIterable, Sendable, Hashable {
 
         switch self {
 
-        case .spam: return String(localized: "Spam")
-        case .abusive: return String(localized: "Abusive")
-        case .offTopic: return String(localized: "Off topic")
-        case .duplicate: return String(localized: "Duplicate")
-        case .other: return String(localized: "Other")
+        case .spam: return String(localized: "Spam", bundle: .feedbackResources)
+        case .abusive: return String(localized: "Abusive", bundle: .feedbackResources)
+        case .offTopic: return String(localized: "Off topic", bundle: .feedbackResources)
+        case .duplicate: return String(localized: "Duplicate", bundle: .feedbackResources)
+        case .other: return String(localized: "Other", bundle: .feedbackResources)
         }
     }
 

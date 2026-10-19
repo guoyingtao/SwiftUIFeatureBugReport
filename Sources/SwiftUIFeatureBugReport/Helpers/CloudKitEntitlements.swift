@@ -22,13 +22,13 @@ public enum FeedbackUnavailableReason: Sendable, Equatable {
         switch self {
 
         case .invalidContainerIdentifier(let identifier):
-            return String(localized: "Feedback is not set up correctly in this build: \"\(identifier)\" is not a valid iCloud container identifier.")
+            return String(localized: "Feedback is not set up correctly in this build: \"\(identifier)\" is not a valid iCloud container identifier.", bundle: .feedbackResources)
 
         case .missingCloudKitEntitlement:
-            return String(localized: "Feedback is not available in this build: the app is not signed with the iCloud (CloudKit) capability.")
+            return String(localized: "Feedback is not available in this build: the app is not signed with the iCloud (CloudKit) capability.", bundle: .feedbackResources)
 
         case .containerNotInEntitlements(let identifier):
-            return String(localized: "Feedback is not available in this build: the iCloud container \(identifier) is not in the app's entitlements.")
+            return String(localized: "Feedback is not available in this build: the iCloud container \(identifier) is not in the app's entitlements.", bundle: .feedbackResources)
         }
     }
 }

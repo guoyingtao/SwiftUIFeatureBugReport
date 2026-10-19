@@ -136,13 +136,13 @@ struct FeedbackFormViewContent: View {
 
             Section {
 
-                Picker("Type", selection: $type) {
+                Picker(loc("Type"), selection: $type) {
 
-                    Text("Bug").tag(FeedbackType.bug)
-                    Text("Feature").tag(FeedbackType.feature)
+                    Text("Bug", bundle: .feedbackResources).tag(FeedbackType.bug)
+                    Text("Feature", bundle: .feedbackResources).tag(FeedbackType.feature)
                 }
                 .pickerStyle(.segmented)
-                .accessibilityLabel(Text("Feedback type"))
+                .accessibilityLabel(Text("Feedback type", bundle: .feedbackResources))
             }
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
@@ -150,10 +150,10 @@ struct FeedbackFormViewContent: View {
 
             Section {
 
-                TextField("Title", text: $title)
+                TextField(loc("Title"), text: $title)
                     .onChange(of: title) { _, newValue in scheduleSearch(for: newValue) }
 
-            } header: { Text("Title") }
+            } header: { Text("Title", bundle: .feedbackResources) }
 
             if !matches.isEmpty { searchResults }
 
@@ -162,7 +162,7 @@ struct FeedbackFormViewContent: View {
                 FeedbackTextEditor(placeholder: "What happened, or what would you like to see?",
                                    text: $body_)
 
-            } header: { Text("Details") }
+            } header: { Text("Details", bundle: .feedbackResources) }
 
             if PrivateFeedbackPolicy.offersToggle(mode: privateMode) { privateSection }
             else if privateMode == .only { privateOnlyNotice }
@@ -182,7 +182,7 @@ struct FeedbackFormViewContent: View {
 
                     if privateMode != .only && files.isEmpty && !isPrivate {
 
-                        Text("Files are only ever sent privately. Attaching one makes this feedback private.")
+                        Text("Files are only ever sent privately. Attaching one makes this feedback private.", bundle: .feedbackResources)
                     }
                 }
             }
@@ -193,7 +193,7 @@ struct FeedbackFormViewContent: View {
 
                     MetadataDisclosureView(includeMetadata: $includeMetadata, environment: DeviceInfo.current(), metadata: metadata)
 
-                } label: { Label("What gets included?", systemImage: "info.circle") }
+                } label: { Label(loc("What gets included?"), systemImage: "info.circle") }
             }
 
 #if !os(macOS)
@@ -203,7 +203,7 @@ struct FeedbackFormViewContent: View {
 
                     HStack {
 
-                        Text("Submit")
+                        Text("Submit", bundle: .feedbackResources)
 
                         if isSubmitting {
 
@@ -227,20 +227,20 @@ struct FeedbackFormViewContent: View {
         // Long bodies push the submit row under the keyboard; let a drag or the Done key dismiss it.
         .scrollDismissesKeyboard(.interactively)
 #endif
-        .navigationTitle("New Feedback")
+        .navigationTitle(loc("New Feedback"))
         .inlineNavigationTitle()
         .toolbar {
 
             ToolbarItem(placement: toolbarLeadingPlacement) {
 
-                Button("Cancel", role: .cancel) { dismiss() }
+                Button(loc("Cancel"), role: .cancel) { dismiss() }
             }
 
 #if os(iOS)
             ToolbarItemGroup(placement: .keyboard) {
 
                 Spacer()
-                Button("Done") {
+                Button(loc("Done")) {
                     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                                     to: nil, from: nil, for: nil)
                 }
@@ -259,7 +259,7 @@ struct FeedbackFormViewContent: View {
                     }
                     else {
 
-                        Text("Submit")
+                        Text("Submit", bundle: .feedbackResources)
                     }
                 }
                 .disabled(!canSubmit)
@@ -269,19 +269,19 @@ struct FeedbackFormViewContent: View {
         .onDisappear { searchTask?.cancel() }
         .task { await store.start() }
 
-        .alert("Thanks", isPresented: $showSuccess) {
+        .alert(loc("Thanks"), isPresented: $showSuccess) {
 
-            Button("OK") { dismiss() }
+            Button(loc("OK")) { dismiss() }
 
         } message: {
 
             if submittedPrivately {
 
-                Text("Your feedback has been sent privately. Only you and the developer can see it.")
+                Text("Your feedback has been sent privately. Only you and the developer can see it.", bundle: .feedbackResources)
             }
             else {
 
-                Text("Your feedback has been submitted.")
+                Text("Your feedback has been submitted.", bundle: .feedbackResources)
             }
         }
 
@@ -292,9 +292,9 @@ struct FeedbackFormViewContent: View {
             if !allowed { imageData = [] }
         }
 
-        .alert("Voted", isPresented: .constant(votedFromSearch != nil)) {
+        .alert(loc("Voted"), isPresented: .constant(votedFromSearch != nil)) {
 
-            Button("OK") {
+            Button(loc("OK")) {
 
                 votedFromSearch = nil
                 dismiss()
@@ -302,7 +302,7 @@ struct FeedbackFormViewContent: View {
 
         } message: {
 
-            Text("Your vote has been added to \"\(votedFromSearch?.title ?? "")\".")
+            Text("Your vote has been added to \"\(votedFromSearch?.title ?? "")\".", bundle: .feedbackResources)
         }
     }
 
@@ -314,7 +314,7 @@ struct FeedbackFormViewContent: View {
 
             Toggle(isOn: Binding(get: { isPrivate }, set: { privateChoice = $0 })) {
 
-                Label("Private (only visible to developer)", systemImage: "lock")
+                Label(loc("Private (only visible to developer)"), systemImage: "lock")
             }
             .disabled(isPrivateForced)
 
@@ -322,19 +322,19 @@ struct FeedbackFormViewContent: View {
 
             if forcedReason == .files {
 
-                Text("Feedback with a file attached is always sent privately. Remove the file to post publicly.")
+                Text("Feedback with a file attached is always sent privately. Remove the file to post publicly.", bundle: .feedbackResources)
             }
             else if isPrivateForced {
 
-                Text("Bug reports and anything with an image are always sent privately. Only you and the developer can see them.")
+                Text("Bug reports and anything with an image are always sent privately. Only you and the developer can see them.", bundle: .feedbackResources)
             }
             else if isPrivate {
 
-                Text("Only you and the developer can see this. It won't appear on the public board and can't be voted on.")
+                Text("Only you and the developer can see this. It won't appear on the public board and can't be voted on.", bundle: .feedbackResources)
             }
             else {
 
-                Text("Public feedback is visible to everyone using the app.")
+                Text("Public feedback is visible to everyone using the app.", bundle: .feedbackResources)
             }
         }
     }
@@ -344,9 +344,9 @@ struct FeedbackFormViewContent: View {
 
         Section {
 
-            Label("Sent privately to the developer", systemImage: "lock")
+            Label(loc("Sent privately to the developer"), systemImage: "lock")
 
-        } footer: { Text("Only you and the developer can see your feedback.") }
+        } footer: { Text("Only you and the developer can see your feedback.", bundle: .feedbackResources) }
     }
 
     // MARK: - Search before submit
@@ -389,8 +389,8 @@ struct FeedbackFormViewContent: View {
                 }
             }
 
-        } header: { Text("Already reported?") }
-          footer: { Text("Vote for an existing one instead, or carry on and submit yours.") }
+        } header: { Text("Already reported?", bundle: .feedbackResources) }
+          footer: { Text("Vote for an existing one instead, or carry on and submit yours.", bundle: .feedbackResources) }
     }
 
     private func scheduleSearch(for text: String) {

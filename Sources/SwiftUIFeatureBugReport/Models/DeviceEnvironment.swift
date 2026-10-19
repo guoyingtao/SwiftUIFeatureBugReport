@@ -47,11 +47,11 @@ public struct DeviceEnvironment: Sendable, Hashable {
     public var disclosureEntries: [(label: LocalizedStringResource, value: String)] {
 
         [
-            ("Device", deviceModel),
-            ("Operating system", osVersion),
-            ("Platform", platform),
-            ("App version", appVersion),
-            ("Build", buildNumber)
+            (locResource("Device"), deviceModel),
+            (locResource("Operating system"), osVersion),
+            (locResource("Platform"), platform),
+            (locResource("App version"), appVersion),
+            (locResource("Build"), buildNumber)
         ]
     }
 }

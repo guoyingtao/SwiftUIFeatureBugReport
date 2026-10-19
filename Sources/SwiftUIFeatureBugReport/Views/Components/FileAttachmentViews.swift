@@ -53,7 +53,7 @@ struct FileAttachmentPicker: View {
                 Button(action: { remove(file) },
                        label: { Image(systemName: "xmark.circle.fill").symbolRenderingMode(.hierarchical) })
                     .buttonStyle(.borderless)
-                    .accessibilityLabel(Text("Remove \(file.name)"))
+                    .accessibilityLabel(Text("Remove \(file.name)", bundle: .feedbackResources))
             }
             .accessibilityElement(children: .combine)
         }
@@ -64,7 +64,7 @@ struct FileAttachmentPicker: View {
 
                 HStack {
 
-                    Label(files.isEmpty ? "Attach file" : "Attach another file", systemImage: "paperclip")
+                    Label(files.isEmpty ? loc("Attach file") : loc("Attach another file"), systemImage: "paperclip")
 
                     if isCopying {
 
@@ -88,7 +88,7 @@ struct FileAttachmentPicker: View {
         }
         else {
 
-            Text("Maximum of \(rules.maxCount) files.")
+            Text("Maximum of \(rules.maxCount) files.", bundle: .feedbackResources)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -174,7 +174,7 @@ struct PrivateFileList: View {
 
             ForEach(report.files) { file in row(for: file) }
 
-        } header: { Text("Files") }
+        } header: { Text("Files", bundle: .feedbackResources) }
           .quickLookPreview($previewURL)
           // Positions shift when a file is removed, so per-position state would point at the wrong file.
           .onChange(of: report.files) { _, _ in
@@ -226,13 +226,13 @@ struct PrivateFileList: View {
             }
             .buttonStyle(.plain)
             .disabled(downloading.contains(file.index))
-            .accessibilityHint(Text("Opens a preview"))
+            .accessibilityHint(Text("Opens a preview", bundle: .feedbackResources))
 
             if let url = downloaded[file.index] {
 
                 ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }
                     .buttonStyle(.borderless)
-                    .accessibilityLabel(Text("Share \(file.name)"))
+                    .accessibilityLabel(Text("Share \(file.name)", bundle: .feedbackResources))
             }
 
             if let onDelete {
@@ -240,7 +240,7 @@ struct PrivateFileList: View {
                 Button(role: .destructive, action: { onDelete(file) }) { Image(systemName: "trash") }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.red)
-                    .accessibilityLabel(Text("Remove \(file.name)"))
+                    .accessibilityLabel(Text("Remove \(file.name)", bundle: .feedbackResources))
             }
         }
         .modifier(PrivateFileDeleteActions(file: file, onDelete: onDelete))
@@ -290,11 +290,11 @@ private struct PrivateFileDeleteActions: ViewModifier {
             content
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
 
-                    Button(role: .destructive, action: { onDelete(file) }) { Label("Remove", systemImage: "trash") }
+                    Button(role: .destructive, action: { onDelete(file) }) { Label(loc("Remove"), systemImage: "trash") }
                 }
                 .contextMenu {
 
-                    Button(role: .destructive, action: { onDelete(file) }) { Label("Remove file", systemImage: "trash") }
+                    Button(role: .destructive, action: { onDelete(file) }) { Label(loc("Remove file"), systemImage: "trash") }
                 }
         }
         else {

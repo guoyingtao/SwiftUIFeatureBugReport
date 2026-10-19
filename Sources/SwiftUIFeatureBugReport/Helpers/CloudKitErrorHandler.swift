@@ -60,7 +60,7 @@ enum CloudKitErrorHandler {
     /// What a paged load reports when it stopped at `maxQueryPages`.
     static var incompleteLoad: FeedbackError {
 
-        .underlying(String(localized: "Some items could not be loaded. Try again in a moment."))
+        .underlying(String(localized: "Some items could not be loaded. Try again in a moment.", bundle: .feedbackResources))
     }
 
     /// The first failure among a page's match results that is not "record missing", classified.

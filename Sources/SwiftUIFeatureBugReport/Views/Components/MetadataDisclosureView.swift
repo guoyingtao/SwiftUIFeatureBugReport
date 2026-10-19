@@ -27,14 +27,14 @@ struct MetadataDisclosureView: View {
                     LabeledContent(String(localized: entry.label), value: entry.value)
                 }
 
-            } header: { Text("Device information") }
-            footer: { Text("Visible to everyone") }
+            } header: { Text("Device information", bundle: .feedbackResources) }
+            footer: { Text("Visible to everyone", bundle: .feedbackResources) }
 
             if metadata.isEmpty {
 
                 Section {
 
-                    Text("This app is not attaching any additional information")
+                    Text("This app is not attaching any additional information", bundle: .feedbackResources)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -45,10 +45,10 @@ struct MetadataDisclosureView: View {
                 // toggle; it is the minimum needed to triage a report, and matches any public issue tracker.
                 Section {
 
-                    Toggle("Include additional information", isOn: $includeMetadata)
+                    Toggle(loc("Include additional information"), isOn: $includeMetadata)
 
-                } header: { Text("Additional information") }
-                  footer: { Text("Turning this off still sends device information, just not the additional information this app attached") }
+                } header: { Text("Additional information", bundle: .feedbackResources) }
+                  footer: { Text("Turning this off still sends device information, just not the additional information this app attached", bundle: .feedbackResources) }
 
                 
                 Section(content: {
@@ -58,11 +58,11 @@ struct MetadataDisclosureView: View {
                         LabeledContent(key, value: metadata[key] ?? "")
                     }
                     
-                }, footer: { Text("Only the developer can see this") })
+                }, footer: { Text("Only the developer can see this", bundle: .feedbackResources) })
                 .opacity(includeMetadata ? 1 : 0.5)
             }
         }
-        .navigationTitle("What gets included")
+        .navigationTitle(loc("What gets included"))
         .inlineNavigationTitle()
     }
 }

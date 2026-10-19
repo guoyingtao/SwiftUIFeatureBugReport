@@ -37,7 +37,7 @@ struct ImageAttachmentPicker: View {
             if remaining > 0 { picker }
             else {
 
-                Text("Maximum of \(FeedbackRequest.maximumImages) images.")
+                Text("Maximum of \(FeedbackRequest.maximumImages) images.", bundle: .feedbackResources)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -67,10 +67,10 @@ struct ImageAttachmentPicker: View {
                                    label: { Image(systemName: "xmark.circle.fill").symbolRenderingMode(.hierarchical) })
                                 .buttonStyle(.borderless)
                                 .padding(4)
-                                .accessibilityLabel(Text("Remove image \(index + 1)"))
+                                .accessibilityLabel(Text("Remove image \(index + 1)", bundle: .feedbackResources))
                         }
                         .accessibilityElement(children: .contain)
-                        .accessibilityLabel(Text("Attached image \(index + 1) of \(imageData.count)"))
+                        .accessibilityLabel(Text("Attached image \(index + 1) of \(imageData.count)", bundle: .feedbackResources))
                     }
                 }
             }
@@ -91,7 +91,7 @@ struct ImageAttachmentPicker: View {
                      matching: .images,
                      photoLibrary: .shared()) {
 
-            Label(attached ? "Add another" : "Attach a screenshot", systemImage: "photo.badge.plus")
+            Label(attached ? loc("Add another") : loc("Attach a screenshot"), systemImage: "photo.badge.plus")
         }
         .onChange(of: selections) { _, items in
 
@@ -117,7 +117,7 @@ struct ImageAttachmentPicker: View {
         }
         #else
         Button(action: { isImporting = true },
-               label: { Label(hasAttachments ? "Add another" : "Attach a screenshot",
+               label: { Label(hasAttachments ? loc("Add another") : loc("Attach a screenshot"),
                               systemImage: "photo.badge.plus") })
             .fileImporter(isPresented: $isImporting,
                           allowedContentTypes: [.image],
@@ -174,7 +174,7 @@ struct ImageGallery: View {
                 .scaledToFit()
                 .frame(maxWidth: .infinity, maxHeight: 220)
                 .clipShape(.rect(cornerRadius: 8))
-                .accessibilityLabel(Text("Image attached to this request")),
+                .accessibilityLabel(Text("Image attached to this request", bundle: .feedbackResources)),
                       index: 0)
         }
         else {
@@ -192,7 +192,7 @@ struct ImageGallery: View {
                                 .scaledToFit()
                                 .frame(maxHeight: 220)
                                 .clipShape(.rect(cornerRadius: 8))
-                                .accessibilityLabel(Text("Image \(index + 1) of \(urls.count)")),
+                                .accessibilityLabel(Text("Image \(index + 1) of \(urls.count)", bundle: .feedbackResources)),
                                       index: index)
                         }
                     }
@@ -217,11 +217,11 @@ struct ImageGallery: View {
                     }
                     .buttonStyle(.borderless)
                     .padding(6)
-                    .accessibilityLabel(Text("Remove image \(index + 1)"))
+                    .accessibilityLabel(Text("Remove image \(index + 1)", bundle: .feedbackResources))
                 }
                 .contextMenu {
 
-                    Button(role: .destructive, action: { onDelete(index) }) { Label("Remove image", systemImage: "trash") }
+                    Button(role: .destructive, action: { onDelete(index) }) { Label(loc("Remove image"), systemImage: "trash") }
                 }
         }
         else {

@@ -61,7 +61,7 @@ struct RequestRow: View {
 
                 if request.imageState == .pending {
 
-                    Label("Image in review", systemImage: "clock")
+                    Label(loc("Image in review"), systemImage: "clock")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -92,7 +92,7 @@ struct IdentityResolvingView: View {
 
             ProgressView()
 
-            Text("Checking your iCloud account…")
+            Text("Checking your iCloud account…", bundle: .feedbackResources)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -114,10 +114,10 @@ struct ReadOnlyNotice: View {
 
             VStack(alignment: .leading, spacing: 2) {
 
-                Text("Read-only")
+                Text("Read-only", bundle: .feedbackResources)
                     .font(.subheadline.weight(.semibold))
 
-                Text("Sign in to iCloud in Settings to post, vote or comment.")
+                Text("Sign in to iCloud in Settings to post, vote or comment.", bundle: .feedbackResources)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -141,10 +141,10 @@ struct FeedbackEmptyState: View {
                 .font(.system(size: 44))
                 .foregroundStyle(.tertiary)
 
-            Text(title)
+            Text(title, bundle: .feedbackResources)
                 .font(.headline)
 
-            Text(message)
+            Text(message, bundle: .feedbackResources)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -176,7 +176,7 @@ struct FeedbackErrorBanner: View {
 
             if let retry {
 
-                Button("Try again", action: retry)
+                Button(loc("Try again"), action: retry)
                     .font(.footnote)
             }
         }

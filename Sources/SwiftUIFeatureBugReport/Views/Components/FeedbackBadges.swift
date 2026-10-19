@@ -46,15 +46,15 @@ struct HiddenBadge: View {
 
     var body: some View {
 
-        Label("Hidden", systemImage: "eye.slash")
+        Label(loc("Hidden"), systemImage: "eye.slash")
             .font(.caption2)
             .labelStyle(.titleAndIcon)
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
             .background(Color.secondary.opacity(0.15), in: Capsule())
             .foregroundStyle(.secondary)
-            .accessibilityLabel(Text("Hidden from users"))
-            .help("Hidden from users. You can still see it because you are a developer.")
+            .accessibilityLabel(Text("Hidden from users", bundle: .feedbackResources))
+            .help(loc("Hidden from users. You can still see it because you are a developer."))
     }
 }
 
@@ -113,9 +113,9 @@ struct VoteButton: View {
         // Tappable while voted: the button toggles, so a mis-tap or a change of mind is recoverable.
         .disabled(isBusy || !isEnabled)
         .accessibilityLabel(hasVoted
-                            ? Text("Voted. ^[\(count) vote](inflect: true)")
-                            : Text("Vote. ^[\(count) vote](inflect: true)"))
-        .accessibilityHint(hasVoted ? Text("Withdraws your vote") : Text("Adds your vote"))
+                            ? Text("Voted. \(count) votes", bundle: .feedbackResources)
+                            : Text("Vote. \(count) votes", bundle: .feedbackResources))
+        .accessibilityHint(hasVoted ? Text("Withdraws your vote", bundle: .feedbackResources) : Text("Adds your vote", bundle: .feedbackResources))
         .accessibilityAddTraits(hasVoted ? [.isSelected] : [])
     }
 }
@@ -133,8 +133,8 @@ struct ResolvedVersionBadge: View {
 
         Group {
 
-            if version.isEmpty { Label("Fixed", systemImage: "checkmark.circle.fill") }
-            else { Label("Fixed in \(version)", systemImage: "checkmark.circle.fill") }
+            if version.isEmpty { Label(loc("Fixed"), systemImage: "checkmark.circle.fill") }
+            else { Label(loc("Fixed in \(version)"), systemImage: "checkmark.circle.fill") }
         }
         .font(.caption2)
         .foregroundStyle(.green)
@@ -165,7 +165,7 @@ struct ModerationBanner: View {
 
         case .visible where reportCount >= threshold:
             return ("Automatically hidden",
-                    "^[\(reportCount) report](inflect: true) reached the threshold of \(threshold), so users can no longer see this. Clear reports to restore it.",
+                    "\(reportCount) reports reached the threshold of \(threshold), so users can no longer see this. Clear reports to restore it.",
                     "exclamationmark.triangle.fill", .orange)
 
         case .approved:
@@ -189,11 +189,11 @@ struct ModerationBanner: View {
 
                 VStack(alignment: .leading, spacing: 2) {
 
-                    Text(state.title)
+                    Text(state.title, bundle: .feedbackResources)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(state.tint)
 
-                    Text(state.detail)
+                    Text(state.detail, bundle: .feedbackResources)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -220,7 +220,7 @@ struct AppBadge: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 2)
                 .background(.quaternary, in: Capsule())
-                .accessibilityLabel(Text("App: \(appID)"))
+                .accessibilityLabel(Text("App: \(appID)", bundle: .feedbackResources))
         }
     }
 }
@@ -248,21 +248,21 @@ struct AppFilterPicker: View {
 
         if Self.isVisible(selection: selection, appIDs: appIDs) {
 
-            Picker("App", selection: $selection) {
+            Picker(loc("App"), selection: $selection) {
 
                 ForEach(choices, id: \.self) { choice in
 
                     switch choice {
 
-                    case .all: Text("All apps").tag(choice)
+                    case .all: Text("All apps", bundle: .feedbackResources).tag(choice)
                     case .app(let appID): Text(verbatim: appID).tag(choice)
-                    case .unscoped: Text("No app").tag(choice)
+                    case .unscoped: Text("No app", bundle: .feedbackResources).tag(choice)
                     }
                 }
             }
             .labelsHidden()
-            .accessibilityLabel(Text("Filter by app"))
-            .help("Filter by app")
+            .accessibilityLabel(Text("Filter by app", bundle: .feedbackResources))
+            .help(loc("Filter by app"))
 #if os(macOS)
             .fixedSize()
 #endif

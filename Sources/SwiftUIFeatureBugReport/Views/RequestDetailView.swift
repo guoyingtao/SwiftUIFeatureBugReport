@@ -81,8 +81,8 @@ struct RequestDetailViewContent: View {
 
             Section {
 
-                LabeledContent("Votes", value: store.votes.tally(for: request.id).formatted(.number))
-                LabeledContent("Submitted", value: request.createdAt.formatted(date: .abbreviated, time: .omitted))
+                LabeledContent(loc("Votes"), value: store.votes.tally(for: request.id).formatted(.number))
+                LabeledContent(loc("Submitted"), value: request.createdAt.formatted(date: .abbreviated, time: .omitted))
             }
 
             commentSection
@@ -124,14 +124,14 @@ struct RequestDetailViewContent: View {
 
         .sheet(isPresented: $showingReport) { reportSheet }
 
-        .confirmationDialog("Mark this complete?",
+        .confirmationDialog(loc("Mark this complete?"),
                             isPresented: $showingCompleteConfirmation,
                             titleVisibility: .visible) {
 
-            Button("Mark complete") { Task { await markComplete() } }
-            Button("Cancel", role: .cancel) { }
+            Button(loc("Mark complete")) { Task { await markComplete() } }
+            Button(loc("Cancel"), role: .cancel) { }
 
-        } message: { Text("This tells everyone the request has been dealt with. You can't undo it from here.") }
+        } message: { Text("This tells everyone the request has been dealt with. You can't undo it from here.", bundle: .feedbackResources) }
     }
 
     // MARK: - Sections
@@ -146,7 +146,7 @@ struct RequestDetailViewContent: View {
             // reads as a failed submission, and the user files it again.
             Section {
 
-                Label("Image awaiting review", systemImage: "clock")
+                Label(loc("Image awaiting review"), systemImage: "clock")
                     .foregroundStyle(.secondary)
             }
 
@@ -154,7 +154,7 @@ struct RequestDetailViewContent: View {
 
             Section {
 
-                Label("Image removed by the developer", systemImage: "photo.badge.exclamationmark")
+                Label(loc("Image removed by the developer"), systemImage: "photo.badge.exclamationmark")
                     .foregroundStyle(.secondary)
             }
 
@@ -177,11 +177,11 @@ struct RequestDetailViewContent: View {
 
             if store.comments.isLoading {
 
-                HStack { ProgressView(); Text("Loading replies…") }
+                HStack { ProgressView(); Text("Loading replies…", bundle: .feedbackResources) }
             }
             else if store.comments.comments.isEmpty {
 
-                Text("No replies yet")
+                Text("No replies yet", bundle: .feedbackResources)
                     .foregroundStyle(.secondary)
             }
             else {
@@ -192,7 +192,7 @@ struct RequestDetailViewContent: View {
                 }
             }
 
-        } header: { Text("Replies") }
+        } header: { Text("Replies", bundle: .feedbackResources) }
     }
 
     @ViewBuilder private var replySection: some View {
@@ -205,7 +205,7 @@ struct RequestDetailViewContent: View {
 
                 HStack {
 
-                    Text("Send reply")
+                    Text("Send reply", bundle: .feedbackResources)
 
                     if isSendingReply { Spacer(); ProgressView().controlSize(.small) }
                 }
@@ -216,7 +216,7 @@ struct RequestDetailViewContent: View {
 
             Text(store.container.isDeveloper
                  ? "Posted as the developer."
-                 : "Only you and the developer can reply here.")
+                 : "Only you and the developer can reply here.", bundle: .feedbackResources)
         }
     }
 
@@ -228,7 +228,7 @@ struct RequestDetailViewContent: View {
 
                 Section {
 
-                    Picker("Reason", selection: $reportCategory) {
+                    Picker(loc("Reason"), selection: $reportCategory) {
 
                         ForEach(ReportCategory.allCases, id: \.self) {
 
@@ -236,22 +236,22 @@ struct RequestDetailViewContent: View {
                         }
                     }
 
-                } header: { Text("Reason") }
-                  footer: { Text("It stops showing for you straight away. Reports are reviewed by the developer.") }
+                } header: { Text("Reason", bundle: .feedbackResources) }
+                  footer: { Text("It stops showing for you straight away. Reports are reviewed by the developer.", bundle: .feedbackResources) }
             }
             .formStyle(.grouped)
-            .navigationTitle("Report")
+            .navigationTitle(loc("Report"))
             .inlineNavigationTitle()
             .toolbar {
 
                 ToolbarItem(placement: toolbarLeadingPlacement) {
 
-                    Button("Cancel", role: .cancel) { showingReport = false }
+                    Button(loc("Cancel"), role: .cancel) { showingReport = false }
                 }
 
                 ToolbarItem(placement: toolbarTrailingPlacement) {
 
-                    Button("Report") { submitReport() }
+                    Button(loc("Report")) { submitReport() }
                 }
             }
         }
@@ -279,13 +279,13 @@ struct RequestDetailViewContent: View {
                     Section {
 
                         Button(action: { showingEdit = true },
-                               label: { Label("Edit", systemImage: "pencil") })
+                               label: { Label(loc("Edit"), systemImage: "pencil") })
                             .disabled(!store.canEdit(request))
 
                         if request.status != .complete {
 
                             Button(action: { showingCompleteConfirmation = true },
-                                   label: { Label("Mark complete", systemImage: "checkmark") })
+                                   label: { Label(loc("Mark complete"), systemImage: "checkmark") })
                         }
                     }
                 }
@@ -294,7 +294,7 @@ struct RequestDetailViewContent: View {
 
                     Button(action: { toggleFollow() }) {
 
-                        Label(store.follows.isFollowing(request.id) ? "Following" : "Follow",
+                        Label(store.follows.isFollowing(request.id) ? loc("Following") : loc("Follow"),
                               systemImage: store.follows.isFollowing(request.id) ? "bell.fill" : "bell")
                     }
                     .disabled(!store.canWrite)
@@ -303,18 +303,18 @@ struct RequestDetailViewContent: View {
                 Section {
 
                     Button(role: .destructive, action: { showingReport = true },
-                           label: { Label("Report", systemImage: "flag") })
+                           label: { Label(loc("Report"), systemImage: "flag") })
                         .disabled(!store.canWrite || store.reports.hasReported(request.id))
 
                     if !request.creatorID.isEmpty && !store.isMine(request) {
 
                         Button(role: .destructive, action: { store.reports.block(author: request.creatorID) },
-                               label: { Label("Block this author", systemImage: "person.slash") })
+                               label: { Label(loc("Block this author"), systemImage: "person.slash") })
                             .disabled(store.reports.isBlocked(request.creatorID))
                     }
                 }
 
-            } label: { Label("Options", systemImage: "ellipsis.circle") }
+            } label: { Label(loc("Options"), systemImage: "ellipsis.circle") }
         }
     }
 
@@ -438,7 +438,7 @@ struct CommentRow: View {
                 Image(systemName: comment.isDeveloper ? "checkmark.seal.fill" : "person.circle.fill")
                     .foregroundStyle(comment.isDeveloper ? Color.accentColor : Color.secondary)
 
-                Text(comment.isDeveloper ? "Developer" : "Author")
+                Text(comment.isDeveloper ? "Developer" : "Author", bundle: .feedbackResources)
                     .font(.subheadline.weight(.semibold))
 
                 Spacer()
@@ -485,29 +485,29 @@ struct EditRequestView: View {
 
             Form {
 
-                Section { TextField("Title", text: $title) } header: { Text("Title") }
+                Section { TextField(loc("Title"), text: $title) } header: { Text("Title", bundle: .feedbackResources) }
 
                 Section {
 
                     FeedbackTextEditor(placeholder: "Details", text: $body_)
 
-                } header: { Text("Details") }
+                } header: { Text("Details", bundle: .feedbackResources) }
 
                 if let error { Section { FeedbackErrorBanner(error: error, retry: nil) } }
             }
             .formStyle(.grouped)
-            .navigationTitle("Edit")
+            .navigationTitle(loc("Edit"))
             .inlineNavigationTitle()
             .toolbar {
 
                 ToolbarItem(placement: toolbarLeadingPlacement) {
 
-                    Button("Cancel", role: .cancel) { dismiss() }
+                    Button(loc("Cancel"), role: .cancel) { dismiss() }
                 }
 
                 ToolbarItem(placement: toolbarTrailingPlacement) {
 
-                    Button("Save") { save() }
+                    Button(loc("Save")) { save() }
                         .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                                   || body_.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                                   || isSaving)

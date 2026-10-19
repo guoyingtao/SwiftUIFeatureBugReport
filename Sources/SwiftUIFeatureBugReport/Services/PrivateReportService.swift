@@ -320,7 +320,7 @@ import Observation
 
         guard PrivateThread.acceptsFollowUp(report: report, currentUserRecordID: me) else {
 
-            throw FeedbackError.underlying(String(localized: "You can't reply to this report."))
+            throw FeedbackError.underlying(String(localized: "You can't reply to this report.", bundle: .feedbackResources))
         }
 
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -708,7 +708,7 @@ import Observation
 
         guard let saved = makeReport(seeded) else {
 
-            throw FeedbackError.underlying(String(localized: "Could not read back the saved report."))
+            throw FeedbackError.underlying(String(localized: "Could not read back the saved report.", bundle: .feedbackResources))
         }
 
         // Saved either way - it is the previous account's record - but only listed if that account is

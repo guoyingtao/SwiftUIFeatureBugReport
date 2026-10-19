@@ -119,7 +119,7 @@ enum FeedbackImage {
         guard let cgImage = downsampled(source, maxPixelSize: maxPixelSize) else { return nil }
 
         // Not `decorative`: call sites attach their own accessibility labels.
-        return Image(cgImage, scale: 1, label: Text("Image"))
+        return Image(cgImage, scale: 1, label: Text("Image", bundle: .feedbackResources))
     }
 
     /// The decode itself, separate so it is unit tested.

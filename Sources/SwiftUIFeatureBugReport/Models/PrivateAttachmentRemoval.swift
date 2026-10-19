@@ -47,10 +47,10 @@ public enum AttachmentRemovalError: LocalizedError, Sendable, Hashable {
         switch self {
 
         case .lengthMismatch:
-            return String(localized: "This report's attachment lists don't match, so a single attachment can't be removed. Delete the whole report instead.")
+            return String(localized: "This report's attachment lists don't match, so a single attachment can't be removed. Delete the whole report instead.", bundle: .feedbackResources)
 
         case .indexOutOfRange, .changed:
-            return String(localized: "The attachments on this report have changed. Reload it and try again.")
+            return String(localized: "The attachments on this report have changed. Reload it and try again.", bundle: .feedbackResources)
         }
     }
 }

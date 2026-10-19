@@ -49,7 +49,7 @@ extension View {
                 ToolbarItem(placement: .automatic) {
 
                     Button(action: { Task { await action() } },
-                           label: { Label("Refresh", systemImage: "arrow.clockwise") })
+                           label: { Label(loc("Refresh"), systemImage: "arrow.clockwise") })
                 }
             }
         #else
@@ -66,6 +66,13 @@ extension View {
     ///
     /// iOS always pushes onto a stack that belongs to the screen, so the title is always its own.
     @ViewBuilder func ownedNavigationTitle(_ title: LocalizedStringKey, ownsStack: Bool) -> some View {
+
+        ownedNavigationTitle(Text(title, bundle: .feedbackResources), ownsStack: ownsStack)
+    }
+
+    /// An already-built title. Deliberately no `String` overload: a string literal would prefer it over
+    /// `LocalizedStringKey` and skip the package's catalogue.
+    @ViewBuilder func ownedNavigationTitle(_ title: Text, ownsStack: Bool) -> some View {
 
         #if os(macOS)
         if ownsStack { self.navigationTitle(title) } else { self }
@@ -117,7 +124,7 @@ struct FeedbackTextEditor: View {
 
             if text.isEmpty {
 
-                Text(placeholder)
+                Text(placeholder, bundle: .feedbackResources)
                     .foregroundStyle(.tertiary)
                     .padding(.top, 8)
                     .padding(.leading, 5)

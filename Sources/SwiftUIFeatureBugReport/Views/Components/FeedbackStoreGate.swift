@@ -84,7 +84,7 @@ struct FeedbackUnavailableView: View {
 
         ContentUnavailableView {
 
-            Label("Feedback unavailable", systemImage: "exclamationmark.icloud")
+            Label(loc("Feedback unavailable"), systemImage: "exclamationmark.icloud")
         }
         description: {
 

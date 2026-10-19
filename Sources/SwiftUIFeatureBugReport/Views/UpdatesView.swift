@@ -48,7 +48,7 @@ struct UpdatesViewContent: View {
             }
             else if store.activity.isLoading && store.activity.activity.isEmpty {
 
-                Section { ProgressView("Loading…").frame(maxWidth: .infinity) }
+                Section { ProgressView(loc("Loading…")).frame(maxWidth: .infinity) }
             }
             else if store.activity.activity.isEmpty {
 

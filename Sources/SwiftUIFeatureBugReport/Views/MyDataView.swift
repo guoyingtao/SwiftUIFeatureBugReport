@@ -47,54 +47,54 @@ struct MyDataViewContent: View {
 
                     if store.accountData.isLoading {
 
-                        HStack { ProgressView().controlSize(.small); Text("Counting…") }
+                        HStack { ProgressView().controlSize(.small); Text("Counting…", bundle: .feedbackResources) }
                     }
                     else {
 
-                        LabeledContent("Requests", value: store.accountData.counts.requests.formatted(.number))
-                        LabeledContent("Votes", value: store.accountData.counts.votes.formatted(.number))
+                        LabeledContent(loc("Requests"), value: store.accountData.counts.requests.formatted(.number))
+                        LabeledContent(loc("Votes"), value: store.accountData.counts.votes.formatted(.number))
                             .foregroundStyle(.secondary)
-                        LabeledContent("Replies", value: store.accountData.counts.comments.formatted(.number))
-                        LabeledContent("Reports", value: store.accountData.counts.reports.formatted(.number))
+                        LabeledContent(loc("Replies"), value: store.accountData.counts.comments.formatted(.number))
+                        LabeledContent(loc("Reports"), value: store.accountData.counts.reports.formatted(.number))
 
                         // Shown whenever there are any, even with private feedback since turned off -
                         // deletion still covers them below.
                         if showsPrivateReports {
 
-                            LabeledContent("Private reports", value: store.accountData.counts.privateReports.formatted(.number))
+                            LabeledContent(loc("Private reports"), value: store.accountData.counts.privateReports.formatted(.number))
 
                             if store.accountData.counts.privateDeletionRequested {
 
-                                Label("Deletion requested. The developer will delete your private reports.", systemImage: "clock")
+                                Label(loc("Deletion requested. The developer will delete your private reports."), systemImage: "clock")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                             }
                         }
                     }
 
-                } header: { Text("Your activity") }
+                } header: { Text("Your activity", bundle: .feedbackResources) }
                   footer: {
 
                       VStack(alignment: .leading, spacing: 6) {
 
                           if isAppScoped {
 
-                              Text("These counts cover this app only. Feedback you left in other apps is managed, and deleted, from those apps.")
+                              Text("These counts cover this app only. Feedback you left in other apps is managed, and deleted, from those apps.", bundle: .feedbackResources)
                           }
 
-                          Text("Tied to your iCloud account. No email address, no sign-up, no account was created for you.")
+                          Text("Tied to your iCloud account. No email address, no sign-up, no account was created for you.", bundle: .feedbackResources)
                       }
                   }
 
                 Section {
 
                     Button(role: .destructive, action: { showingDeleteConfirmation = true },
-                           label: { Label("Delete my requests, replies and reports", systemImage: "trash") })
+                           label: { Label(loc("Delete my requests, replies and reports"), systemImage: "trash") })
                         .disabled(store.accountData.isDeleting || store.accountData.counts.isEmpty)
 
                     if store.accountData.isDeleting {
 
-                        HStack { ProgressView().controlSize(.small); Text("Deleting…") }
+                        HStack { ProgressView().controlSize(.small); Text("Deleting…", bundle: .feedbackResources) }
                     }
 
                 } footer: {
@@ -103,14 +103,14 @@ struct MyDataViewContent: View {
 
                         if isAppScoped {
 
-                            Text("Only your data in this app is deleted. To delete what you posted in other apps, use “My requests” in each of those apps.")
+                            Text("Only your data in this app is deleted. To delete what you posted in other apps, use “My requests” in each of those apps.", bundle: .feedbackResources)
                         }
 
-                        Text("Votes you cast on other people's requests aren't included. A vote carries no text, and removing them would quietly change someone else's total. Withdraw a vote from the request itself.")
+                        Text("Votes you cast on other people's requests aren't included. A vote carries no text, and removing them would quietly change someone else's total. Withdraw a vote from the request itself.", bundle: .feedbackResources)
 
                         if showsPrivateReports {
 
-                            Text("Private reports can only be deleted by the developer. Deleting your data sends them a deletion request, and your private reports stay until they process it.")
+                            Text("Private reports can only be deleted by the developer. Deleting your data sends them a deletion request, and your private reports stay until they process it.", bundle: .feedbackResources)
                         }
                     }
                 }
@@ -132,16 +132,16 @@ struct MyDataViewContent: View {
             await store.accountData.loadCounts()
         }
 
-        .confirmationDialog(isAppScoped ? LocalizedStringKey("Delete everything you've posted in this app?") : LocalizedStringKey("Delete everything you've posted?"),
+        .confirmationDialog(isAppScoped ? loc("Delete everything you've posted in this app?") : loc("Delete everything you've posted?"),
                             isPresented: $showingDeleteConfirmation,
                             titleVisibility: .visible) {
 
-            Button("Delete everything", role: .destructive) {
+            Button(loc("Delete everything"), role: .destructive) {
 
                 Task { await store.deleteMyData() }
             }
 
-            Button("Cancel", role: .cancel) { }
+            Button(loc("Cancel"), role: .cancel) { }
 
         } message: {
 
@@ -152,20 +152,20 @@ struct MyDataViewContent: View {
 
                 if showsPrivateReports {
 
-                    Text("This permanently deletes your requests, replies and reports in this app. Any votes and replies other people left on your requests go with them. Votes you cast on other people's requests stay, so their totals aren't changed. Withdraw those individually if you want them gone. Your private reports from this app are sent to the developer for deletion. Your data in other apps isn't affected; delete it from those apps. This can't be undone.")
+                    Text("This permanently deletes your requests, replies and reports in this app. Any votes and replies other people left on your requests go with them. Votes you cast on other people's requests stay, so their totals aren't changed. Withdraw those individually if you want them gone. Your private reports from this app are sent to the developer for deletion. Your data in other apps isn't affected; delete it from those apps. This can't be undone.", bundle: .feedbackResources)
                 }
                 else {
 
-                    Text("This permanently deletes your requests, replies and reports in this app. Any votes and replies other people left on your requests go with them. Votes you cast on other people's requests stay, so their totals aren't changed. Withdraw those individually if you want them gone. Your data in other apps isn't affected; delete it from those apps. This can't be undone.")
+                    Text("This permanently deletes your requests, replies and reports in this app. Any votes and replies other people left on your requests go with them. Votes you cast on other people's requests stay, so their totals aren't changed. Withdraw those individually if you want them gone. Your data in other apps isn't affected; delete it from those apps. This can't be undone.", bundle: .feedbackResources)
                 }
             }
             else if showsPrivateReports {
 
-                Text("This permanently deletes your requests, replies and reports. Any votes and replies other people left on your requests go with them. Votes you cast on other people's requests stay, so their totals aren't changed. Withdraw those individually if you want them gone. Your private reports are sent to the developer for deletion. This can't be undone.")
+                Text("This permanently deletes your requests, replies and reports. Any votes and replies other people left on your requests go with them. Votes you cast on other people's requests stay, so their totals aren't changed. Withdraw those individually if you want them gone. Your private reports are sent to the developer for deletion. This can't be undone.", bundle: .feedbackResources)
             }
             else {
 
-                Text("This permanently deletes your requests, replies and reports. Any votes and replies other people left on your requests go with them. Votes you cast on other people's requests stay, so their totals aren't changed. Withdraw those individually if you want them gone. This can't be undone.")
+                Text("This permanently deletes your requests, replies and reports. Any votes and replies other people left on your requests go with them. Votes you cast on other people's requests stay, so their totals aren't changed. Withdraw those individually if you want them gone. This can't be undone.", bundle: .feedbackResources)
             }
         }
     }
@@ -193,13 +193,13 @@ struct MyDataViewContent: View {
 
                     Spacer()
 
-                    Button("Unblock") { store.reports.unblock(author: author) }
+                    Button(loc("Unblock")) { store.reports.unblock(author: author) }
                         .font(.caption)
                 }
             }
 
-        } header: { Text("Blocked authors") }
-          footer: { Text("Kept on this device only.") }
+        } header: { Text("Blocked authors", bundle: .feedbackResources) }
+          footer: { Text("Kept on this device only.", bundle: .feedbackResources) }
     }
 }
 

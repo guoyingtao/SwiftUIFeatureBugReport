@@ -98,25 +98,25 @@ public enum FileAttachmentError: LocalizedError, Sendable, Hashable {
         case .tooLarge(let name, let bytes, let limit):
             let size = ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
             let maximum = ByteCountFormatter.string(fromByteCount: Int64(limit), countStyle: .file)
-            return String(localized: "“\(name)” is \(size). Files can be up to \(maximum).")
+            return String(localized: "“\(name)” is \(size). Files can be up to \(maximum).", bundle: .feedbackResources)
 
         case .unsupportedType(let name):
-            return String(localized: "“\(name)” isn't a type of file that can be attached.")
+            return String(localized: "“\(name)” isn't a type of file that can be attached.", bundle: .feedbackResources)
 
         case .tooMany(let limit):
-            return String(localized: "You can attach up to \(limit) files.")
+            return String(localized: "You can attach up to \(limit) files.", bundle: .feedbackResources)
 
         case .empty(let name):
-            return String(localized: "“\(name)” is empty.")
+            return String(localized: "“\(name)” is empty.", bundle: .feedbackResources)
 
         case .unreadable(let name):
-            return String(localized: "“\(name)” couldn't be read.")
+            return String(localized: "“\(name)” couldn't be read.", bundle: .feedbackResources)
 
         case .notAllowed:
-            return String(localized: "Files can't be attached here.")
+            return String(localized: "Files can't be attached here.", bundle: .feedbackResources)
 
         case .missing(let name):
-            return String(localized: "“\(name)” is no longer available.")
+            return String(localized: "“\(name)” is no longer available.", bundle: .feedbackResources)
         }
     }
 }

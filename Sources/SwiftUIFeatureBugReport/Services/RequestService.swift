@@ -260,7 +260,7 @@ import Observation
             throw CloudKitErrorHandler.classify(error)
         }
 
-        guard let saved = FeedbackRequest(record: seeded) else { throw FeedbackError.underlying("Could not read back the saved request.") }
+        guard let saved = FeedbackRequest(record: seeded) else { throw FeedbackError.underlying(loc("Could not read back the saved request.")) }
 
         if let encodedMetadata {
 

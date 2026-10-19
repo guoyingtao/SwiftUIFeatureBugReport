@@ -13,14 +13,14 @@ enum PortalQueue: String, CaseIterable, Hashable {
     case images
     case all
 
-    var localised: LocalizedStringKey {
+    var localised: String {
 
         switch self {
 
-        case .open: return "Open"
-        case .reported: return "Reported"
-        case .images: return "Images"
-        case .all: return "All"
+        case .open: return loc("Open")
+        case .reported: return loc("Reported")
+        case .images: return loc("Images")
+        case .all: return loc("All")
         }
     }
 
@@ -102,13 +102,13 @@ struct DeveloperPortalViewContent: View {
                 // right before anyone taps it.
                 if offersPrivateFeedback { await store.privateReports.loadAllReports() }
             }
-            .confirmationDialog("Delete request?",
+            .confirmationDialog(loc("Delete request?"),
                                 isPresented: Binding(get: { pendingDeletion != nil },
                                                      set: { if !$0 { pendingDeletion = nil } }),
                                 titleVisibility: .visible,
                                 presenting: pendingDeletion) { request in
 
-                Button("Delete", role: .destructive) {
+                Button(loc("Delete"), role: .destructive) {
 
                     Task {
 
@@ -120,11 +120,11 @@ struct DeveloperPortalViewContent: View {
                     }
                 }
 
-                Button("Cancel", role: .cancel) { pendingDeletion = nil }
+                Button(loc("Cancel"), role: .cancel) { pendingDeletion = nil }
 
             } message: { request in
 
-                Text("\"\(request.title)\" and its votes, replies, reports and metadata are removed. This can't be undone.")
+                Text("\"\(request.title)\" and its votes, replies, reports and metadata are removed. This can't be undone.", bundle: .feedbackResources)
             }
     }
 
@@ -212,7 +212,7 @@ struct DeveloperPortalViewContent: View {
                         Image(systemName: "magnifyingglass")
                             .foregroundStyle(.secondary)
 
-                        TextField("Search", text: $searchText)
+                        TextField(loc("Search"), text: $searchText)
                             .textFieldStyle(.plain)
                     }
                     .padding(.horizontal, 8)
@@ -230,7 +230,7 @@ struct DeveloperPortalViewContent: View {
                         Image(systemName: "arrow.clockwise")
                     }
                     .buttonStyle(.borderless)
-                    .help("Refresh")
+                    .help(loc("Refresh"))
                 }
                 
                 if showsSegmentPicker { segmentPicker }
@@ -248,8 +248,8 @@ struct DeveloperPortalViewContent: View {
         .ownedNavigationTitle("Dev Portal", ownsStack: embedsNavigationStack)
 #else
         segmentList
-            .navigationTitle("Dev Portal")
-            .searchable(text: $searchText, prompt: Text("Search"))
+            .navigationTitle(loc("Dev Portal"))
+            .searchable(text: $searchText, prompt: Text("Search", bundle: .feedbackResources))
             .feedbackRefreshable { [store, includesPrivate = offersPrivateFeedback] in
 
                 await Self.refresh(store: store, includesPrivate: includesPrivate)
@@ -327,7 +327,7 @@ struct DeveloperPortalViewContent: View {
         }
         .labelsHidden()
         .pickerStyle(.segmented)
-        .accessibilityLabel(Text("Triage queue"))
+        .accessibilityLabel(Text("Triage queue", bundle: .feedbackResources))
         .frame(maxWidth: .infinity, minHeight: 50)
     }
 
@@ -337,13 +337,13 @@ struct DeveloperPortalViewContent: View {
 
         Picker("", selection: $segment) {
 
-            Text("Public").tag(PortalSegment.requests)
+            Text("Public", bundle: .feedbackResources).tag(PortalSegment.requests)
 
             privateSegmentTitle.tag(PortalSegment.privateReports)
         }
         .labelsHidden()
         .pickerStyle(.segmented)
-        .accessibilityLabel(Text("Public requests or private reports"))
+        .accessibilityLabel(Text("Public requests or private reports", bundle: .feedbackResources))
         .frame(maxWidth: .infinity, minHeight: 36)
     }
 
@@ -352,7 +352,7 @@ struct DeveloperPortalViewContent: View {
 
         let pending = privatePendingCount
 
-        return pending > 0 ? Text("Private (\(pending))") : Text("Private")
+        return pending > 0 ? Text("Private (\(pending))", bundle: .feedbackResources) : Text("Private", bundle: .feedbackResources)
     }
 
     @ViewBuilder private var privateFilterPicker: some View {
@@ -366,7 +366,7 @@ struct DeveloperPortalViewContent: View {
         }
         .labelsHidden()
         .pickerStyle(.segmented)
-        .accessibilityLabel(Text("Private queue"))
+        .accessibilityLabel(Text("Private queue", bundle: .feedbackResources))
         .frame(maxWidth: .infinity, minHeight: 50)
     }
 
@@ -413,7 +413,7 @@ struct DeveloperPortalViewContent: View {
 
                 ForEach(queued) { request in row(for: request) }
 
-            } header: { Text("^[\(queued.count) request](inflect: true)") }
+            } header: { Text("\(queued.count) requests", bundle: .feedbackResources) }
         }
     }
 
@@ -423,15 +423,15 @@ struct DeveloperPortalViewContent: View {
 
         if !availableVersions.isEmpty {
 
-            Picker("App version", selection: $versionFilter) {
+            Picker(loc("App version"), selection: $versionFilter) {
 
-                Text("All versions").tag(String?.none)
+                Text("All versions", bundle: .feedbackResources).tag(String?.none)
 
                 ForEach(availableVersions, id: \.self) { Text($0).tag(String?.some($0)) }
             }
             .labelsHidden()
-            .accessibilityLabel(Text("Filter by app version"))
-            .help("Filter by app version")
+            .accessibilityLabel(Text("Filter by app version", bundle: .feedbackResources))
+            .help(loc("Filter by app version"))
 #if os(macOS)
             .fixedSize()
 #endif
@@ -462,28 +462,28 @@ struct DeveloperPortalViewContent: View {
 
                 if store.reports.reportCount(for: request.id) > 0 {
 
-                    Label("\(store.reports.reportCount(for: request.id))", systemImage: "flag.fill")
+                    Label(store.reports.reportCount(for: request.id).formatted(), systemImage: "flag.fill")
                         .font(.caption2)
                         .foregroundStyle(.red)
                 }
 
                 if request.imageState == .pending {
 
-                    Label("Image", systemImage: "photo")
+                    Label(loc("Image"), systemImage: "photo")
                         .font(.caption2)
                         .foregroundStyle(.orange)
                 }
 
                 if request.moderation == .hidden {
 
-                    Label("Hidden", systemImage: "eye.slash")
+                    Label(loc("Hidden"), systemImage: "eye.slash")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
 
                 Spacer()
 
-                Text("^[\(store.votes.tally(for: request.id)) vote](inflect: true) · \(request.environment.versionLabel)")
+                Text("\(store.votes.tally(for: request.id)) votes · \(request.environment.versionLabel)", bundle: .feedbackResources)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -528,23 +528,23 @@ struct DeveloperPortalViewContent: View {
         if request.moderation == .hidden {
 
             Button(action: { Task { await store.moderation.unhide(request) } },
-                   label: { Label("Unhide", systemImage: "eye") })
+                   label: { Label(loc("Unhide"), systemImage: "eye") })
         }
         else {
 
             Button(role: .destructive, action: { Task { await store.moderation.hide(request) } },
-                   label: { Label("Hide", systemImage: "eye.slash") })
+                   label: { Label(loc("Hide"), systemImage: "eye.slash") })
         }
 
         Button(action: { Task { await store.moderation.approve(request) } },
-               label: { Label("Clear reports", systemImage: "checkmark.shield") })
+               label: { Label(loc("Clear reports"), systemImage: "checkmark.shield") })
 
         Divider()
 
         // Confirmed rather than immediate: this cascades, and there is no undo. Hiding is the
         // reversible option and sits above it for that reason.
         Button(role: .destructive, action: { pendingDeletion = request },
-               label: { Label("Delete", systemImage: "trash") })
+               label: { Label(loc("Delete"), systemImage: "trash") })
     }
 
     private var selectedRequest: FeedbackRequest? {

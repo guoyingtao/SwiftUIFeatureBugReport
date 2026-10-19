@@ -25,15 +25,15 @@ private enum BoardDestination: Hashable, Identifiable {
 
     /// - Parameter privateOnly: `PrivateFeedbackMode.only`, where there are no public requests and
     ///   My data reads as such.
-    func title(privateOnly: Bool) -> LocalizedStringKey {
+    func title(privateOnly: Bool) -> String {
 
         switch self {
 
-        case .roadmap: return "Roadmap"
-        case .updates: return "Updates"
-        case .myData: return privateOnly ? "My data" : "My requests"
-        case .portal: return "Developer portal"
-        case .privateReports: return "My private reports"
+        case .roadmap: return loc("Roadmap")
+        case .updates: return loc("Updates")
+        case .myData: return privateOnly ? loc("My data") : loc("My requests")
+        case .portal: return loc("Developer portal")
+        case .privateReports: return loc("My private reports")
         }
     }
 }
@@ -120,10 +120,10 @@ struct FeedbackBoardViewContent: View {
             HStack(spacing: 8) {
 
                 Button(action: { self.destination = nil },
-                       label: { Label("Back", systemImage: "chevron.backward") })
+                       label: { Label(loc("Back"), systemImage: "chevron.backward") })
                     .buttonStyle(.borderless)
                     .labelStyle(.iconOnly)
-                    .help("Back to the board")
+                    .help(loc("Back to the board"))
 
                 Text(destination.title(privateOnly: !store.hasPublicBoard))
                     .font(.headline)
@@ -220,15 +220,15 @@ struct FeedbackBoardViewContent: View {
 
             listContent
         }
-        .navigationTitle("Feedback")
+        .navigationTitle(loc("Feedback"))
         .sheet(isPresented: $showingForm) {
 
             FeedbackFormView(store: store, prefill: prefill, initialType: filter == .features ? .feature : .bug)
         }
 #else
         listContent
-            .navigationTitle("Feedback")
-            .searchable(text: $searchText, prompt: Text("Search"))
+            .navigationTitle(loc("Feedback"))
+            .searchable(text: $searchText, prompt: Text("Search", bundle: .feedbackResources))
             .toolbar { toolbarContent }
             .feedbackRefreshable { await refreshEverything() }
             .sheet(isPresented: $showingForm) {
@@ -250,7 +250,7 @@ struct FeedbackBoardViewContent: View {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
 
-                    TextField("Search", text: $searchText)
+                    TextField(loc("Search"), text: $searchText)
                         .textFieldStyle(.plain)
                 }
                 .padding(.horizontal, 8)
@@ -264,7 +264,7 @@ struct FeedbackBoardViewContent: View {
                     Image(systemName: updatesSymbolName)
                         .symbolRenderingMode(.multicolor)
                 }
-                .help("Updates")
+                .help(loc("Updates"))
                 .accessibilityLabel(updatesAccessibilityLabel)
 
                 // Stands in for the iOS toolbar's `ToolbarSpacer`. This header is deliberately plain
@@ -277,7 +277,7 @@ struct FeedbackBoardViewContent: View {
 
                     Image(systemName: "arrow.clockwise")
                 }
-                .help("Refresh")
+                .help(loc("Refresh"))
 
                 // Front and centre rather than buried in the menu - it is the developer's most-used
                 // destination on this screen, and it was two clicks and a submenu away.
@@ -287,7 +287,7 @@ struct FeedbackBoardViewContent: View {
 
                         BadgedSymbol(systemName: "hammer", count: portalPendingCount)
                     }
-                    .help("Developer portal")
+                    .help(loc("Developer portal"))
                     .accessibilityLabel(portalAccessibilityLabel)
                 }
 
@@ -304,7 +304,7 @@ struct FeedbackBoardViewContent: View {
                     Image(systemName: "plus")
                 }
                 .disabled(!store.canWrite)
-                .help("New Feedback")
+                .help(loc("New Feedback"))
             }
             .buttonStyle(.borderless)
             
@@ -336,7 +336,7 @@ struct FeedbackBoardViewContent: View {
             }
             .labelsHidden()
             .pickerStyle(.segmented)
-            .accessibilityLabel(Text("Filter by type"))
+            .accessibilityLabel(Text("Filter by type", bundle: .feedbackResources))
             .frame(maxWidth: .infinity, minHeight: 50)
         }
         .listRowInsets(EdgeInsets())
@@ -371,7 +371,7 @@ struct FeedbackBoardViewContent: View {
         }
         else if store.requests.isLoading && !store.requests.hasLoadedOnce {
 
-            Section { ProgressView("Loading…").frame(maxWidth: .infinity) }
+            Section { ProgressView(loc("Loading…")).frame(maxWidth: .infinity) }
         }
         else if displayedRequests.isEmpty {
 
@@ -433,12 +433,12 @@ struct FeedbackBoardViewContent: View {
         let voted = store.votes.hasVoted(on: request.id)
 
         Button(action: { vote(on: request) },
-               label: { Label(voted ? "Withdraw vote" : "Vote",
+               label: { Label(voted ? loc("Withdraw vote") : loc("Vote"),
                               systemImage: voted ? "arrow.uturn.down.circle" : "arrow.up.circle") })
             .disabled(!store.canWrite)
 
         Button(action: { toggleFollow(request) },
-               label: { Label(store.follows.isFollowing(request.id) ? "Unfollow" : "Follow",
+               label: { Label(store.follows.isFollowing(request.id) ? loc("Unfollow") : loc("Follow"),
                               systemImage: store.follows.isFollowing(request.id) ? "bell.slash" : "bell") })
             .disabled(!store.canWrite)
 
@@ -446,7 +446,7 @@ struct FeedbackBoardViewContent: View {
         // On iOS this is reachable by opening the request; on the Mac the row menu is the only
         // pointer-friendly route to it.
         Button(action: { selection = request.id },
-               label: { Label("Open", systemImage: "arrow.forward") })
+               label: { Label(loc("Open"), systemImage: "arrow.forward") })
 #endif
     }
 
@@ -457,7 +457,7 @@ struct FeedbackBoardViewContent: View {
         ToolbarItem(placement: toolbarTrailingPlacement) {
 
             NavigationLink { UpdatesView(store: store, embedsNavigationStack: false) }
-                label: { Label("Updates", systemImage: updatesSymbolName) }
+                label: { Label(loc("Updates"), systemImage: updatesSymbolName) }
                 .symbolRenderingMode(.multicolor)
                 .accessibilityLabel(updatesAccessibilityLabel)
         }
@@ -477,7 +477,7 @@ struct FeedbackBoardViewContent: View {
                 NavigationLink { DeveloperPortalView(store: store, embedsNavigationStack: false) }
                     label: {
 
-                        Label { Text("Developer portal") }
+                        Label { Text("Developer portal", bundle: .feedbackResources) }
                             icon: { BadgedSymbol(systemName: "hammer", count: portalPendingCount) }
                     }
                     .accessibilityLabel(portalAccessibilityLabel)
@@ -490,13 +490,13 @@ struct FeedbackBoardViewContent: View {
 
                 moreMenuItems
 
-            } label: { Label("More", systemImage: "ellipsis.circle") }
+            } label: { Label(loc("More"), systemImage: "ellipsis.circle") }
         }
 
         ToolbarItem(placement: toolbarTrailingPlacement) {
 
             Button(action: { showingForm = true },
-                   label: { Label("New Feedback", systemImage: "plus") })
+                   label: { Label(loc("New Feedback"), systemImage: "plus") })
                 .disabled(!store.canWrite)
         }
     }
@@ -505,7 +505,7 @@ struct FeedbackBoardViewContent: View {
     /// destinations, not two copies that can drift apart.
     @ViewBuilder private var moreMenuItems: some View {
 
-        Picker("Sort", selection: $sort) {
+        Picker(loc("Sort"), selection: $sort) {
 
             ForEach(BoardSort.allCases, id: \.self) { Text($0.localised).tag($0) }
         }
@@ -515,28 +515,28 @@ struct FeedbackBoardViewContent: View {
 #if os(macOS)
         // Buttons, not links - see `BoardDestination` for why nothing here may push.
         Button(action: { destination = .roadmap },
-               label: { Label("Roadmap", systemImage: "map") })
+               label: { Label(loc("Roadmap"), systemImage: "map") })
 
         Button(action: { destination = .myData },
-               label: { Label("My requests", systemImage: "person.crop.circle") })
+               label: { Label(loc("My requests"), systemImage: "person.crop.circle") })
 
         if offersPrivateFeedback {
 
             Button(action: { destination = .privateReports },
-                   label: { Label("My private reports", systemImage: "lock") })
+                   label: { Label(loc("My private reports"), systemImage: "lock") })
         }
 
 #else
         NavigationLink { RoadmapView(store: store, embedsNavigationStack: false) }
-            label: { Label("Roadmap", systemImage: "map") }
+            label: { Label(loc("Roadmap"), systemImage: "map") }
 
         NavigationLink { MyDataView(store: store, embedsNavigationStack: false) }
-            label: { Label("My requests", systemImage: "person.crop.circle") }
+            label: { Label(loc("My requests"), systemImage: "person.crop.circle") }
 
         if offersPrivateFeedback {
 
             NavigationLink { PrivateReportsView(store: store, scope: .mine, embedsNavigationStack: false) }
-                label: { Label("My private reports", systemImage: "lock") }
+                label: { Label(loc("My private reports"), systemImage: "lock") }
         }
 
 #endif
@@ -559,8 +559,8 @@ struct FeedbackBoardViewContent: View {
 
         let pending = portalPendingCount
 
-        return pending > 0 ? Text("Developer portal, ^[\(pending) pending private item](inflect: true)")
-                           : Text("Developer portal")
+        return pending > 0 ? Text("Developer portal, \(pending) pending private items", bundle: .feedbackResources)
+                           : Text("Developer portal", bundle: .feedbackResources)
     }
 
     private func loadPrivateQueueIfNeeded() async {
@@ -581,7 +581,7 @@ struct FeedbackBoardViewContent: View {
 
         let unread = store.activity.unreadCount
 
-        return unread > 0 ? Text("Updates, ^[\(unread) new item](inflect: true)") : Text("Updates")
+        return unread > 0 ? Text("Updates, \(unread) new items", bundle: .feedbackResources) : Text("Updates", bundle: .feedbackResources)
     }
 
     @ViewBuilder private var emptyState: some View {
@@ -600,7 +600,7 @@ struct FeedbackBoardViewContent: View {
                                    title: "No open requests",
                                    message: "Be the first to send some feedback.")
 
-                Button("Send Feedback") { showingForm = true }
+                Button(loc("Send Feedback")) { showingForm = true }
                     .buttonStyle(.borderedProminent)
                     .disabled(!store.canWrite)
             }
@@ -677,12 +677,12 @@ struct FeedbackBoardViewContent: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .navigationTitle("Feedback")
+            .navigationTitle(loc("Feedback"))
             .sheet(isPresented: $showingForm) { FeedbackFormView(store: store, prefill: prefill) }
         }
 #else
         privateOnlyList
-            .navigationTitle("Feedback")
+            .navigationTitle(loc("Feedback"))
             .toolbar { privateOnlyToolbar }
             .feedbackRefreshable { await refreshEverything() }
             .sheet(isPresented: $showingForm) { FeedbackFormView(store: store, prefill: prefill) }
@@ -708,7 +708,7 @@ struct FeedbackBoardViewContent: View {
 
             Button(action: { showingForm = true }) {
 
-                Label("New feedback", systemImage: "square.and.pencil")
+                Label(loc("New feedback"), systemImage: "square.and.pencil")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
@@ -717,7 +717,7 @@ struct FeedbackBoardViewContent: View {
 
         } footer: {
 
-            Text("Your feedback goes privately to the developer. Only you and the developer can see it.")
+            Text("Your feedback goes privately to the developer. Only you and the developer can see it.", bundle: .feedbackResources)
         }
         .listRowInsets(EdgeInsets())
         .listRowBackground(Color.clear)
@@ -728,13 +728,13 @@ struct FeedbackBoardViewContent: View {
 
         HStack(spacing: 10) {
 
-            Text("My private reports")
+            Text("My private reports", bundle: .feedbackResources)
                 .font(.headline)
 
             Spacer(minLength: 8)
 
             Button(action: { Task { await refreshEverything() } }) { Image(systemName: "arrow.clockwise") }
-                .help("Refresh")
+                .help(loc("Refresh"))
 
             if store.container.isDeveloper {
 
@@ -742,14 +742,14 @@ struct FeedbackBoardViewContent: View {
 
                     BadgedSymbol(systemName: "hammer", count: portalPendingCount)
                 }
-                .help("Developer portal")
+                .help(loc("Developer portal"))
                 .accessibilityLabel(portalAccessibilityLabel)
             }
 
             Menu {
 
                 Button(action: { destination = .myData },
-                       label: { Label("My data", systemImage: "person.crop.circle") })
+                       label: { Label(loc("My data"), systemImage: "person.crop.circle") })
 
             } label: { Image(systemName: "ellipsis.circle") }
                 .menuIndicator(.hidden)
@@ -757,7 +757,7 @@ struct FeedbackBoardViewContent: View {
 
             Button(action: { showingForm = true }) { Image(systemName: "plus") }
                 .disabled(!store.canWrite)
-                .help("New feedback")
+                .help(loc("New feedback"))
         }
         .buttonStyle(.borderless)
         .padding(12)
@@ -779,7 +779,7 @@ struct FeedbackBoardViewContent: View {
                 NavigationLink { DeveloperPortalView(store: store, embedsNavigationStack: false) }
                     label: {
 
-                        Label { Text("Developer portal") }
+                        Label { Text("Developer portal", bundle: .feedbackResources) }
                             icon: { BadgedSymbol(systemName: "hammer", count: portalPendingCount) }
                     }
                     .accessibilityLabel(portalAccessibilityLabel)
@@ -791,15 +791,15 @@ struct FeedbackBoardViewContent: View {
             Menu {
 
                 NavigationLink { MyDataView(store: store, embedsNavigationStack: false) }
-                    label: { Label("My data", systemImage: "person.crop.circle") }
+                    label: { Label(loc("My data"), systemImage: "person.crop.circle") }
 
-            } label: { Label("More", systemImage: "ellipsis.circle") }
+            } label: { Label(loc("More"), systemImage: "ellipsis.circle") }
         }
 
         ToolbarItem(placement: toolbarTrailingPlacement) {
 
             Button(action: { showingForm = true },
-                   label: { Label("New feedback", systemImage: "plus") })
+                   label: { Label(loc("New feedback"), systemImage: "plus") })
                 .disabled(!store.canWrite)
         }
     }
