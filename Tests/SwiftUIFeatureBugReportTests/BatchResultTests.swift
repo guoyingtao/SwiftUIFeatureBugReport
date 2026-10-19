@@ -85,6 +85,10 @@ struct BatchResultTests {
         #expect(CloudKitBatch.firstUnexpectedFailure(saveErrors: [],
                                                      deleteErrors: [partialFailure([recordA: CKError(.unknownItem),
                                                                                     recordB: CKError(.networkFailure)])]) != nil)
+
+        #expect(CloudKitBatch.firstUnexpectedFailure(saveErrors: [partialFailure([recordA: CKError(.serverRecordChanged),
+                                                                                  recordB: CKError(.networkFailure)])],
+                                                     deleteErrors: []) != nil)
     }
 
     @Test("An unexpected per-record failure stops the remaining chunks")

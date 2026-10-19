@@ -74,7 +74,7 @@ enum CloudKitBatch {
 
         if let failure = deleteErrors.first(where: { !CloudKitErrorHandler.isRecordMissing($0) }) { return failure }
 
-        return saveErrors.first { !CloudKitErrorHandler.isDuplicateRecord($0) }
+        return saveErrors.first { !CloudKitErrorHandler.isEntirelyDuplicates($0) }
     }
 
     /// Throws the first unexpected per-record failure in a `modifyRecords(atomically: false)` result.
