@@ -88,6 +88,15 @@ struct DeveloperPortalViewContent: View {
                 selection = nil
                 privateSelection = nil
             }
+            // The private detail pane holds a snapshot the service's `reset()` cannot clear, and
+            // `dismiss` has nothing to pop beside a list, so the selection itself is let go: on any
+            // identity change (sign-out, account switch, re-resolving), and when a reload no longer
+            // contains the selected report.
+            .onChange(of: store.container.privateReportIdentity) { _, _ in privateSelection = nil }
+            .onChange(of: store.privateReports.allReports.map(\.id)) { _, _ in
+                privateSelection = PrivateReportPresentation.retainedSelection(privateSelection,
+                                                                               in: store.privateReports.allReports)
+            }
             .task {
 
                 if !store.hasLoadedOnce { await store.start() }
