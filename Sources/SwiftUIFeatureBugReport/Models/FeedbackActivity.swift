@@ -22,6 +22,9 @@ public struct FeedbackActivity: Identifiable, Sendable, Hashable {
     public let message: String
     public let createdAt: Date
 
+    /// The app of the request this is about, or `nil` - see `AppScope`.
+    public let appID: String?
+
     public init?(record: CKRecord) {
 
         guard record.recordType == RecordType.activity,
@@ -34,5 +37,6 @@ public struct FeedbackActivity: Identifiable, Sendable, Hashable {
         self.requestTitle = record[FieldKey.requestTitle] as? String ?? ""
         self.message = record[FieldKey.message] as? String ?? ""
         self.createdAt = record.creationDate ?? .now
+        self.appID = AppScope.normalized(record[FieldKey.appID] as? String)
     }
 }

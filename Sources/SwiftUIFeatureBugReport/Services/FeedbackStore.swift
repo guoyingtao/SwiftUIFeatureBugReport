@@ -22,6 +22,7 @@ import Observation
     public let activity: ActivityService
     public let moderation: ModerationService
     public let accountData: AccountDataService
+    public let privateReports: PrivateReportService
 
     /// Set once permission has been asked for, so it is asked once per session whichever route got
     /// there - a user's first submission, or a developer opening the portal.
@@ -55,6 +56,7 @@ import Observation
                                             votes: votes,
                                             follows: follows)
         self.accountData = AccountDataService(container: container)
+        self.privateReports = PrivateReportService(container: container)
 
         // `.CKAccountChanged` re-resolves identity inside the container; everything derived from the
         // old identity has to go with it, or the board keeps showing the previous account's votes.
@@ -68,6 +70,7 @@ import Observation
             self.comments.reset()
             self.activity.reset()
             self.requests.reset()
+            self.privateReports.reset()
 
             Task { await self.load() }
         }
@@ -190,6 +193,7 @@ import Observation
         await accountData.deleteAllMyData()
 
         reports.reset()
+        privateReports.reset()
 
         // The follow records are gone from the server; without this the cached set keeps every row
         // showing as followed until the next launch.
@@ -207,7 +211,7 @@ import Observation
     /// The board is the one place that relaxes it - see `boardRequests`.
     public var visibleRequests: [FeedbackRequest] {
 
-        requests.requests.filter { isVisible($0) }
+        requests.requests.filter { container.configuration.appScope.includes($0.appID) && isVisible($0) }
     }
 
     /// What the board shows. Identical to `visibleRequests` for a user.
@@ -219,7 +223,8 @@ import Observation
 
         guard container.isDeveloper else { return visibleRequests }
 
-        return requests.requests.filter { !reports.isBlocked($0.creatorID) }
+        // The developer's board is still this app's board; the portal is where every app shows.
+        return requests.requests.filter { container.configuration.appScope.includes($0.appID) && !reports.isBlocked($0.creatorID) }
     }
 
     /// What the board's own list shows: `boardRequests` without the work that has already shipped.

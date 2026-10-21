@@ -5,6 +5,9 @@
 
 import CloudKit
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 public struct FeedbackFormView: View {
 
@@ -17,8 +20,16 @@ public struct FeedbackFormView: View {
     @State private var body_: String
     @State private var imageData: [Data] = []
 
+    /// The user's own choice. Whether the submission is actually private also depends on the mode -
+    /// see `isPrivate`.
+    @State private var privateChoice = false
+
     @State private var isSubmitting = false
     @State private var showSuccess = false
+
+    /// The route the last successful submission actually took, captured when it started. The success
+    /// alert reads this rather than `isPrivate`, which the user can change while the save is pending.
+    @State private var submittedPrivately = false
     @State private var error: FeedbackError?
 
     @State private var matches: [FeedbackRequest] = []
@@ -68,6 +79,27 @@ public struct FeedbackFormView: View {
             && !body_.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !isSubmitting
             && store.canWrite
+    }
+
+    private var privateMode: PrivateFeedbackMode { store.configuration.privateFeedback }
+
+    private var isPrivateForced: Bool {
+
+        PrivateFeedbackPolicy.isForced(mode: privateMode, type: type, hasAttachments: !imageData.isEmpty)
+    }
+
+    private var isPrivate: Bool {
+
+        PrivateFeedbackPolicy.isPrivate(mode: privateMode,
+                                        type: type,
+                                        hasAttachments: !imageData.isEmpty,
+                                        userChoice: privateChoice)
+    }
+
+    private var allowsImages: Bool {
+
+        PrivateFeedbackPolicy.allowsImages(publicAttachmentsAllowed: store.configuration.allowImageAttachments,
+                                           isPrivate: isPrivate)
     }
 
     public var body: some View {
@@ -121,7 +153,9 @@ public struct FeedbackFormView: View {
 
             } header: { Text("Details") }
 
-            if store.configuration.allowImageAttachments {
+            if PrivateFeedbackPolicy.offersToggle(mode: privateMode) { privateSection }
+
+            if allowsImages {
 
                 Section { ImageAttachmentPicker(imageData: $imageData) }
             }
@@ -162,6 +196,10 @@ public struct FeedbackFormView: View {
             }
         }
         .formStyle(.grouped)
+#if os(iOS)
+        // Long bodies push the submit row under the keyboard; let a drag or the Done key dismiss it.
+        .scrollDismissesKeyboard(.interactively)
+#endif
         .navigationTitle("New Feedback")
         .inlineNavigationTitle()
         .toolbar {
@@ -170,6 +208,17 @@ public struct FeedbackFormView: View {
 
                 Button("Cancel", role: .cancel) { dismiss() }
             }
+
+#if os(iOS)
+            ToolbarItemGroup(placement: .keyboard) {
+
+                Spacer()
+                Button("Done") {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                                    to: nil, from: nil, for: nil)
+                }
+            }
+#endif
 
 #if os(macOS)
             // Native sheet convention: primary action bottom-right, not a full-width row inside the form.
@@ -197,7 +246,24 @@ public struct FeedbackFormView: View {
 
             Button("OK") { dismiss() }
 
-        } message: { Text("Your feedback has been submitted.") }
+        } message: {
+
+            if submittedPrivately {
+
+                Text("Your feedback has been sent privately. Only you and the developer can see it.")
+            }
+            else {
+
+                Text("Your feedback has been submitted.")
+            }
+        }
+
+        // Images picked for a private submission must not quietly ride along on a public one. If the
+        // picker disappears, so do they.
+        .onChange(of: allowsImages) { _, allowed in
+
+            if !allowed { imageData = [] }
+        }
 
         .alert("Voted", isPresented: .constant(votedFromSearch != nil)) {
 
@@ -210,6 +276,35 @@ public struct FeedbackFormView: View {
         } message: {
 
             Text("Your vote has been added to \"\(votedFromSearch?.title ?? "")\".")
+        }
+    }
+
+    // MARK: - Private
+
+    @ViewBuilder private var privateSection: some View {
+
+        Section {
+
+            Toggle(isOn: Binding(get: { isPrivate }, set: { privateChoice = $0 })) {
+
+                Label("Private (only visible to developer)", systemImage: "lock")
+            }
+            .disabled(isPrivateForced)
+
+        } footer: {
+
+            if isPrivateForced {
+
+                Text("Bug reports and anything with an image are always sent privately. Only you and the developer can see them.")
+            }
+            else if isPrivate {
+
+                Text("Only you and the developer can see this. It won't appear on the public board and can't be voted on.")
+            }
+            else {
+
+                Text("Public feedback is visible to everyone using the app.")
+            }
         }
     }
 
@@ -318,16 +413,37 @@ public struct FeedbackFormView: View {
         isSubmitting = true
         error = nil
 
+        // Snapshot everything the save depends on now. The form stays editable while CloudKit is
+        // pending, and the route must not change underneath it.
+        let sendPrivately = isPrivate
+        let kind = type
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedBody = body_.trimmingCharacters(in: .whitespacesAndNewlines)
+        let images = imageData
+        let attachedMetadata = includeMetadata ? metadata : [:]
+
         Task {
 
             do {
 
-                _ = try await store.submit(title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-                                           body: body_.trimmingCharacters(in: .whitespacesAndNewlines),
-                                           type: type,
-                                           imageData: imageData,
-                                           metadata: includeMetadata ? metadata : [:])
+                if sendPrivately {
 
+                    _ = try await store.privateReports.submit(title: trimmedTitle,
+                                                              body: trimmedBody,
+                                                              kind: kind,
+                                                              imageData: images,
+                                                              metadata: attachedMetadata)
+                }
+                else {
+
+                    _ = try await store.submit(title: trimmedTitle,
+                                               body: trimmedBody,
+                                               type: kind,
+                                               imageData: images,
+                                               metadata: attachedMetadata)
+                }
+
+                submittedPrivately = sendPrivately
                 showSuccess = true
             }
             catch {

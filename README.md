@@ -139,11 +139,66 @@ FeedbackConfiguration(
     developerUserRecordIDs: ["_abc123…"],
     reportThreshold: 3,
     allowComments: true,          // use Schema.ckdb
-    allowImageAttachments: true
+    allowImageAttachments: true,
+    privateFeedback: .disabled    // .optional or .bugsAndAttachments once PrivateReport is deployed
 )
 ```
 
 Set `allowComments: false` when using `Schema-NoComments.ckdb`.
+
+`privateFeedback` adds a "Private (only visible to developer)" toggle to the form. Private submissions
+are saved as `PrivateReport` records that only the submitter and the `dev` role can read, enforced by
+CloudKit. Users find them under "My private reports" in the board's "more" menu. Developers find them in
+the developer portal, which gains a **Public / Private** switch at the top. The Private tab is the private
+reports queue, with a Pending/All filter, and shares the portal's app filter and search. With
+`.bugsAndAttachments`, bug reports and anything with an image are always private. Private submissions can
+carry images even with `allowImageAttachments: false`.
+Submitters can read but not edit or delete private reports. They ask the developer to delete them,
+and the developer handles those requests at the top of the portal's Private tab.
+
+The Private tab's title and the portal button on the board show a **pending count**:
+
+- private reports whose status is still Open **and** that have no developer reply yet, not counting one
+  already covered by a deletion request from its own sender (that request is what you act on), plus
+- every unprocessed deletion request (processing deletes the request, so all that remain are pending).
+
+Replying or changing the status takes a report out of the count. The board's figure covers every app;
+the Private tab's follows the app filter, except that deletion requests have no app and always count.
+The rule is `PrivateQueuePolicy`. The Pending filter lists exactly the reports it counts.
+Leave it `.disabled` until `PrivateReport` is deployed. See [Privacy](Docs/Privacy.md#private-feedback).
+
+### Several apps, one container
+
+Apps from the same team can share one container. Give each its own `appID`:
+
+```swift
+FeedbackConfiguration(
+    containerIdentifier: "iCloud.com.newbee.feedback",   // the same in BeeDay, BeeTunes and BeeReader
+    developerUserRecordIDs: ["_abc123…"],
+    appID: "BeeDay"
+)
+```
+
+With `appID` set, new requests, private reports and activity are stamped with it. The board, roadmap,
+search, Updates and "My private reports" then show only that app's records. The developer portal, Public and
+Private tabs alike, still shows every app, with an app badge on each row and an app filter. `appID: nil`,
+the default, writes nothing and shows everything, exactly as before.
+
+Records written before `appID` was set have none, and nobody can tell which app they came from. By default
+they're hidden from every app that sets `appID`. They still show in the portal, where the filter lists them as
+"No app". Set `includeUnscopedRecords: true` in the app that owned the container first, and its existing
+feedback stays visible there.
+
+`appID` is a display filter, **not a security boundary**. It's an ordinary client-written field and every
+app shares the same record types and permissions, so a user of one app can read the others' public
+feedback through CloudKit directly. If the apps' feedback must be kept apart, give each app its own
+container. See [CloudKit setup](Docs/CloudKit-Setup.md#one-container-or-several).
+
+"My data" follows the same rule. With `appID` set, its counts and "Delete my data" cover only this app's
+records (plus unscoped ones if `includeUnscopedRecords` is on); the user's feedback in your other apps stays
+and is deleted from those apps. See [Privacy](Docs/Privacy.md#deletion-in-a-shared-container). With
+`appID: nil` it is account-wide, as before. The portal's "Delete all of this author's data" is always
+account-wide.
 
 ### 6. Deploy before release
 

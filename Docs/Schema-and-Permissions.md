@@ -20,6 +20,8 @@ schema itself, work in Development, export the result, review the diff, and upda
 | `Activity` | User update feed and push trigger |
 | `Follow` | Private subscription to a request |
 | `RequestMetadata` | Private prefilling metadata |
+| `PrivateReport` | Developer-only submission, with its developer replies and optional images |
+| `PrivateReportDeletionRequest` | A submitter's request that the developer delete their private reports |
 
 `Users` is CloudKit's built-in user type. Its queryable record ID is needed to configure the
 `dev` role.
@@ -30,22 +32,37 @@ Every included custom record type needs a queryable `___recordID`.
 
 | Record type | Additional indexes |
 |---|---|
-| `Request` | `title` queryable/searchable; `type`, `status`, `moderation`, `imageState`, `labels`, `resolvedInVersion`, `creatorID`, device fields queryable; `lastActivityAt` and creation time sortable |
+| `Request` | `title` queryable/searchable; `appID`, `type`, `status`, `moderation`, `imageState`, `labels`, `resolvedInVersion`, `creatorID`, device fields queryable; `lastActivityAt` and creation time sortable |
 | `Vote` | `request` queryable; creation time sortable |
 | `Report` | `request` and `category` queryable |
 | `Follow` | `request` queryable; creation time sortable |
 | `Comment`, `DevComment` | `request`, `requestCreator`, `creatorID` queryable |
-| `Activity` | `request`, `recipientID`, `kind` queryable; creation time sortable |
+| `Activity` | `appID`, `request`, `recipientID`, `kind` queryable; creation time sortable |
 | `RequestMetadata` | `request` queryable |
+| `PrivateReport` | creator (`___createdBy`), `appID`, `kind`, `status` queryable; `lastActivityAt` and creation time sortable |
+| `PrivateReportDeletionRequest` | creator (`___createdBy`), `scope` queryable; creation time sortable |
 | `Users` | `___recordID` queryable |
 
 `title` is intentionally the only searchable `Request` field. Search-before-submit uses
 `self CONTAINS`; marking `body` searchable silently widens that query without adding relevance
 ranking.
 
+`appID` scopes records to one app in a shared container (see `FeedbackConfiguration.appID`). It's
+written only when an app sets `appID`; records without it are "unscoped". It's a display filter, not a
+security boundary: it carries no grant of its own, and a request's creator can rewrite it like any
+other field of their request.
+
 ## Permission invariants
 
 - `RequestMetadata` allows authenticated creation but not world reading.
+- `PrivateReport` grants `_creator` READ only, `_icloud` CREATE, `dev` READ, WRITE, and **no**
+  `_world` grant. The creator has no WRITE so they cannot forge developer replies or status. Developer
+  replies are stored on the report (`replies`, a `LIST<STRING>` of JSON entries), because a reply record
+  created by the developer would not be readable by the submitter.
+- `PrivateReportDeletionRequest` has the same grants. Since the creator cannot delete a `PrivateReport`,
+  they create one of these and the developer processes it. The requester is the record's CloudKit
+  creator (`___createdBy`), never a field, and only reports with that same creator are deleted.
+- `SchemaVariantTests` fails if either type gains a `_world` grant or a `_creator` WRITE.
 - `DevComment` grants creation only to `dev`, making developer authorship unspoofable.
 - `Comment` and `Follow` grant developer writes so account deletion can remove another user's data.
 - `Vote`, `Report` and `Follow` grant their creator writes so votes can be withdrawn, follows

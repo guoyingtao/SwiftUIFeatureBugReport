@@ -203,3 +203,100 @@ struct ModerationBanner: View {
         }
     }
 }
+
+
+/// Which app a record came from, in a container shared by several apps. Shown in the developer's
+/// views only - users only ever see their own app's records.
+struct AppBadge: View {
+
+    let appID: String?
+
+    var body: some View {
+
+        if let appID {
+
+            Text(verbatim: appID)
+                .font(.caption2)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(.quaternary, in: Capsule())
+                .accessibilityLabel(Text("App: \(appID)"))
+        }
+    }
+}
+
+
+/// The developer's app filter. Hidden unless the loaded records span more than one app, so a single-app
+/// container never sees it.
+struct AppFilterPicker: View {
+
+    @Binding var selection: AppFilter
+
+    let appIDs: [String?]
+
+    /// Whether the picker renders anything. Shown when there is more than one app to choose between
+    /// (`choices` always includes `.all`), or a non-default selection is in effect so it can be cleared.
+    /// Callers that wrap the picker (a `ToolbarItem`) use this to avoid an empty item.
+    static func isVisible(selection: AppFilter, appIDs: [String?]) -> Bool {
+
+        AppFilter.choices(for: appIDs).count > 2 || selection != .all
+    }
+
+    var body: some View {
+
+        let choices = AppFilter.choices(for: appIDs)
+
+        if Self.isVisible(selection: selection, appIDs: appIDs) {
+
+            Picker("App", selection: $selection) {
+
+                ForEach(choices, id: \.self) { choice in
+
+                    switch choice {
+
+                    case .all: Text("All apps").tag(choice)
+                    case .app(let appID): Text(verbatim: appID).tag(choice)
+                    case .unscoped: Text("No app").tag(choice)
+                    }
+                }
+            }
+            .labelsHidden()
+            .accessibilityLabel(Text("Filter by app"))
+            .help("Filter by app")
+#if os(macOS)
+            .fixedSize()
+#endif
+        }
+    }
+}
+
+
+/// A symbol with a small count badge on its corner - the portal entry's pending figure. Nothing is
+/// drawn over the symbol at zero. Capped at "99+" so a backlog never outgrows the icon.
+///
+/// The count is decoration: callers give the control its own accessibility label with the number in it.
+struct BadgedSymbol: View {
+
+    let systemName: String
+    let count: Int
+
+    var body: some View {
+
+        Image(systemName: systemName)
+            .overlay(alignment: .topTrailing) {
+
+                if count > 0 {
+
+                    Text(verbatim: count > 99 ? "99+" : "\(count)")
+                        .font(.system(size: 9, weight: .bold).monospacedDigit())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 3)
+                        .frame(minWidth: 14, minHeight: 14)
+                        .background(.red, in: Capsule())
+                        .fixedSize()
+                        .offset(x: 8, y: -7)
+                        .accessibilityHidden(true)
+                }
+            }
+    }
+}

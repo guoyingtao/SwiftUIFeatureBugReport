@@ -9,6 +9,7 @@ DEFINE SCHEMA
         "___modTime"    TIMESTAMP QUERYABLE SORTABLE,
         "___modifiedBy" REFERENCE QUERYABLE,
         "___recordID"   REFERENCE QUERYABLE,
+        appID           STRING QUERYABLE,
         kind            STRING QUERYABLE,
         message         STRING,
         recipientID     STRING QUERYABLE,
@@ -46,6 +47,47 @@ DEFINE SCHEMA
         GRANT READ, WRITE TO dev
     );
 
+    RECORD TYPE PrivateReport (
+        "___createTime"   TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"    REFERENCE QUERYABLE,
+        "___etag"         STRING,
+        "___modTime"      TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy"   REFERENCE QUERYABLE,
+        "___recordID"     REFERENCE QUERYABLE,
+        appID             STRING QUERYABLE,
+        appVersion        STRING,
+        body              STRING,
+        buildNumber       STRING,
+        creatorID         STRING QUERYABLE,
+        deviceModel       STRING,
+        images            LIST<ASSET>,
+        kind              STRING QUERYABLE,
+        lastActivityAt    TIMESTAMP QUERYABLE SORTABLE,
+        osVersion         STRING,
+        payload           STRING,
+        platform          STRING,
+        replies           LIST<STRING>,
+        status            STRING QUERYABLE,
+        title             STRING,
+        GRANT READ TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ, WRITE TO dev
+    );
+
+    RECORD TYPE PrivateReportDeletionRequest (
+        "___createTime" TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"  REFERENCE QUERYABLE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy" REFERENCE QUERYABLE,
+        "___recordID"   REFERENCE QUERYABLE,
+        reportNames     LIST<STRING>,
+        scope           STRING QUERYABLE,
+        GRANT READ TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ, WRITE TO dev
+    );
+
     RECORD TYPE Report (
         "___createTime" TIMESTAMP QUERYABLE SORTABLE,
         "___createdBy"  REFERENCE QUERYABLE,
@@ -68,6 +110,7 @@ DEFINE SCHEMA
         "___modTime"      TIMESTAMP QUERYABLE SORTABLE,
         "___modifiedBy"   REFERENCE QUERYABLE,
         "___recordID"     REFERENCE QUERYABLE,
+        appID             STRING QUERYABLE,
         appVersion        STRING QUERYABLE,
         body              STRING,
         buildNumber       STRING QUERYABLE,

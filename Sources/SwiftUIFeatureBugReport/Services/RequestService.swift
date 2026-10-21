@@ -39,6 +39,8 @@ import Observation
         hasLoadedOnce = false
     }
 
+    private var scope: AppScope { container.configuration.appScope }
+
     // MARK: - Reading
 
     public func loadBoard() async {
@@ -56,9 +58,10 @@ import Observation
         // `!=` rather than `IN {visible, approved}` so a moderation state added by a future version
         // still shows up. Records where `moderation` was never written match neither form, which is
         // exactly why the persistence layer always writes it.
-        let predicate = container.isDeveloper
-            ? NSPredicate(value: true)
-            : NSPredicate(format: "%K != %@", FieldKey.moderation, ModerationState.hidden.rawValue)
+        //
+        // Developers also read every app in a shared container, because the portal filters by app. The
+        // board itself narrows to this app on the client - see `FeedbackStore.boardRequests`.
+        let predicate = Self.boardPredicate(isDeveloper: container.isDeveloper, scope: scope)
 
         let query = CKQuery(recordType: RecordType.request, predicate: predicate)
         query.sortDescriptors = [NSSortDescriptor(key: FieldKey.lastActivityAt, ascending: false)]
@@ -145,6 +148,20 @@ import Observation
         }
     }
 
+    /// The board query's predicate - see `loadBoard()` for why developers read everything.
+    nonisolated static func boardPredicate(isDeveloper: Bool, scope: AppScope) -> NSPredicate {
+
+        isDeveloper
+            ? NSPredicate(value: true)
+            : scope.predicate(NSPredicate(format: "%K != %@", FieldKey.moderation, ModerationState.hidden.rawValue))
+    }
+
+    /// The search query's predicate - see `search(_:)`.
+    nonisolated static func searchPredicate(for trimmedText: String, scope: AppScope) -> NSPredicate {
+
+        scope.predicate(NSPredicate(format: "self CONTAINS %@", trimmedText))
+    }
+
     // MARK: - Search
 
     /// Search-before-submit (§9.1). Includes completed requests deliberately - "fixed in 2.1" is the
@@ -164,7 +181,7 @@ import Observation
         // Do not mark `body` searchable without revisiting this: CloudKit returns matches in no
         // particular order and has no relevance scoring, so widening the match set does not surface
         // better results, it just makes which five you get arbitrary.
-        let predicate = NSPredicate(format: "self CONTAINS %@", trimmed)
+        let predicate = Self.searchPredicate(for: trimmed, scope: scope)
 
         let query = CKQuery(recordType: RecordType.request, predicate: predicate)
 
@@ -176,7 +193,7 @@ import Observation
 
             return page.matchResults.compactMap { try? $0.1.get() }
                 .compactMap { FeedbackRequest(record: $0) }
-                .filter { $0.moderation != .hidden }
+                .filter { $0.moderation != .hidden && scope.includes($0.appID) }
         }
         catch {
 
@@ -217,6 +234,9 @@ import Observation
         seeded[FieldKey.resolvedInVersion] = ""
         seeded[FieldKey.creatorID] = creatorID
         seeded[FieldKey.lastActivityAt] = Date.now
+
+        // Absent rather than empty when no app is configured, so the record reads as unscoped.
+        if let appID = scope.appID { seeded[FieldKey.appID] = appID }
 
         let environment = DeviceInfo.current()
 
