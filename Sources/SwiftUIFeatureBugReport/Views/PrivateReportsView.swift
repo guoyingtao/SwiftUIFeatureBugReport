@@ -364,6 +364,62 @@ extension PrivateReportService {
 }
 
 
+/// When an open or selected private report has to be let go.
+///
+/// A detail view or a selection holds on to a report that `PrivateReportService.reset()` cannot reach,
+/// so after a sign-out, an account switch or a reload that dropped the report, it would keep showing
+/// the previous content. Pure, so the rules are tested without a view.
+enum PrivateReportPresentation {
+
+    /// The signed-in identity, as one value to observe: a change to either part invalidates what is open.
+    struct Identity: Equatable {
+
+        let state: IdentityState
+        let userRecordID: String?
+    }
+
+    /// Whether a report opened by `openedBy` may still be shown. False while identity is resolving,
+    /// for a report opened before identity resolved, and after a sign-out or an account switch.
+    static func isShowable(openedBy: String?, current: Identity) -> Bool {
+
+        current.state == .ready && openedBy != nil && current.userRecordID == openedBy
+    }
+
+    /// The selection to keep once the loaded reports changed: `nil` when the selected report is no
+    /// longer among them, so a later reload cannot bring a stale selection back.
+    static func retainedSelection(_ selection: CKRecord.ID?, in reports: [PrivateReport]) -> CKRecord.ID? {
+
+        guard let selection, reports.contains(where: { $0.id == selection }) else { return nil }
+
+        return selection
+    }
+}
+
+
+extension FeedbackContainer {
+
+    /// The identity private report screens are bound to - see `PrivateReportPresentation`.
+    var privateReportIdentity: PrivateReportPresentation.Identity {
+
+        PrivateReportPresentation.Identity(state: identityState, userRecordID: currentUserRecordID)
+    }
+}
+
+
+extension PrivateReportService {
+
+    /// The loaded reports a scope's list is built from, before any filter or search.
+    func loadedReports(_ scope: PrivateReportScope) -> [PrivateReport] {
+
+        switch scope {
+
+        case .mine: myReports
+        case .all: allReports
+        }
+    }
+}
+
+
 extension PrivateReportsList where Header == EmptyView {
 
     init(store: FeedbackStore,
@@ -468,23 +524,53 @@ struct PrivateReportDetailView: View {
     /// False while identity is resolving and after a sign-out or account switch.
     private var belongsToCurrentIdentity: Bool {
 
-        store.container.identityState == .ready && store.container.currentUserRecordID == openedBy
+        PrivateReportPresentation.isShowable(openedBy: openedBy, current: store.container.privateReportIdentity)
     }
 
-    /// Once identity has settled on someone else (or no one), leave rather than keep a redacted screen.
-    private func dismissIfIdentityChanged() {
+    /// While identity is resolving the content is only redacted (see `body`), since it may settle on
+    /// the same account. Once it has settled on someone else (or no one), the snapshot is dropped - not
+    /// just hidden - and the view leaves rather than keep a redacted screen. A host that shows it
+    /// beside a list (the Mac portal) clears its selection as well, since `dismiss` has nothing to
+    /// pop there.
+    private func identityChanged() {
 
-        guard store.container.identityState != .resolving, !belongsToCurrentIdentity else { return }
+        guard !belongsToCurrentIdentity, store.container.identityState != .resolving else { return }
 
+        clearSnapshot()
         dismiss()
     }
 
-    /// Reloads the report, dropping the result if the identity changed while it was in flight.
+    /// Whether the list this report was opened from still contains it.
+    private var isStillListed: Bool {
+
+        PrivateReportPresentation.retainedSelection(report.id, in: store.privateReports.loadedReports(scope)) != nil
+    }
+
+    /// The list reloaded without this report - deleted, or gone with the identity that loaded it.
+    private func listChanged() {
+
+        guard !isStillListed else { return }
+
+        clearSnapshot()
+        dismiss()
+    }
+
+    /// Replaces the report with an empty one under the same ID, so its text, replies, images and
+    /// metadata are no longer held by this view.
+    private func clearSnapshot() {
+
+        report = PrivateReport(id: report.id)
+        replyText = ""
+        error = nil
+    }
+
+    /// Reloads the report, dropping the result if the identity changed or the report left the list
+    /// while it was in flight, so a pending load cannot restore content that was already cleared.
     private func reloadDetail() async {
 
         let loaded = await store.privateReports.loadDetail(report)
 
-        if belongsToCurrentIdentity { report = loaded }
+        if belongsToCurrentIdentity, isStillListed { report = loaded }
     }
 
     /// The portal's controls are offered to a developer in the developer's queue. The `dev` role is
@@ -513,8 +599,8 @@ struct PrivateReportDetailView: View {
         // Never renames a Mac host window - see `ownedNavigationTitle`.
         .ownedNavigationTitle(title, ownsStack: false)
         .inlineNavigationTitle()
-        .onChange(of: store.container.identityState) { _, _ in dismissIfIdentityChanged() }
-        .onChange(of: store.container.currentUserRecordID) { _, _ in dismissIfIdentityChanged() }
+        .onChange(of: store.container.privateReportIdentity) { _, _ in identityChanged() }
+        .onChange(of: store.privateReports.loadedReports(scope).map(\.id)) { _, _ in listChanged() }
         .task { await reloadDetail() }
     }
 
