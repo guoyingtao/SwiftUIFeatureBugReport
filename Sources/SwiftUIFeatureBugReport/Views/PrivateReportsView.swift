@@ -607,8 +607,8 @@ struct PrivateReportDetailView: View {
     /// While identity is resolving the content is only redacted (see `body`), since it may settle on
     /// the same account. Once it has settled on someone else (or no one), the snapshot is dropped - not
     /// just hidden - and the view leaves rather than keep a redacted screen. A host that shows it
-    /// beside a list (the Mac portal) clears its selection as well, since `dismiss` has nothing to
-    /// pop there.
+    /// beside a list (the Mac portal, or the board's private-only mode) clears its selection as
+    /// well, since `dismiss` has nothing to pop there.
     private func identityChanged() {
 
         guard !belongsToCurrentIdentity, store.container.identityState != .resolving else { return }
@@ -632,13 +632,16 @@ struct PrivateReportDetailView: View {
         dismiss()
     }
 
-    /// Replaces the report with an empty one under the same ID, so its text, replies, images and
-    /// metadata are no longer held by this view.
+    /// Replaces the report with an empty one under the same ID, so its text, replies, images, files
+    /// and metadata are no longer held by this view, and drops any confirmation about it.
     private func clearSnapshot() {
 
         report = PrivateReport(id: report.id)
         replyText = ""
         error = nil
+        pendingRemoval = nil
+        showingDeletionConfirmation = false
+        showingDeleteReportConfirmation = false
     }
 
     /// Reloads the report, dropping the result if the identity changed or the report left the list
@@ -1057,7 +1060,7 @@ struct PrivateReportDetailView: View {
 
                 let updated = try await store.privateReports.removeAttachment(attachment, from: report)
 
-                if belongsToCurrentIdentity { report = updated }
+                if belongsToCurrentIdentity, isStillListed { report = updated }
             }
             catch let refusal as AttachmentRemovalError {
 

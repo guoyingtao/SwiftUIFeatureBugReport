@@ -86,6 +86,15 @@ struct FeedbackBoardViewContent: View {
     public var body: some View {
 
         container
+            // Private-only mode's Mac detail pane holds a snapshot the service's `reset()` cannot
+            // clear, and `dismiss` has nothing to pop beside a list, so the selection itself is let
+            // go: on any identity change, and when a reload no longer contains the selected report.
+            // The same rule as `DeveloperPortalView`'s private selection.
+            .onChange(of: store.container.privateReportIdentity) { _, _ in privateSelection = nil }
+            .onChange(of: store.privateReports.myReports.map(\.id)) { _, _ in
+                privateSelection = PrivateReportPresentation.retainedSelection(privateSelection,
+                                                                               in: store.privateReports.myReports)
+            }
             .task {
 
                 if !store.hasLoadedOnce { await store.start() }
